@@ -265,11 +265,7 @@ export async function createUser(user: Omit<User, "id" | "createdAt">): Promise<
 
 export async function updateUser(id: string, updates: Partial<User>): Promise<void> {
   try {
-    console.log("[v0] updateUser - id:", id)
-    console.log("[v0] updateUser - updates:", updates)
-
     if (!id || typeof id !== "string") {
-      console.error("[v0] updateUser - invalid id")
       throw new Error("Invalid user ID")
     }
     const fields: string[] = []
@@ -321,20 +317,15 @@ export async function updateUser(id: string, updates: Partial<User>): Promise<vo
     }
 
     if (fields.length === 0) {
-      console.log("[v0] updateUser - no fields to update")
       return
     }
 
     const setClause = fields.map((f, i) => `${f} = $${i + 2}`).join(", ")
     const query = `UPDATE users SET ${setClause} WHERE id = $1`
 
-    console.log("[v0] updateUser - query:", query)
-    console.log("[v0] updateUser - values:", [id, ...values])
-
-    const result = await sql.query(query, [id, ...values])
-    console.log("[v0] updateUser - result:", result)
+    await sql.query(query, [id, ...values])
   } catch (error) {
-    console.error("[v0] updateUser error:", error)
+    console.error("[DB] updateUser error:", error)
     throw error
   }
 }

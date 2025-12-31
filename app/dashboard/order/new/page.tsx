@@ -196,8 +196,6 @@ export default function NewOrderPage() {
       return
     }
 
-    console.log("[v0] Starting order submission...")
-
     // Validation
     if (!formData.namaNasabah.trim()) {
       toast({
@@ -281,7 +279,6 @@ export default function NewOrderPage() {
     }
 
     setIsLoading(true)
-    console.log("[v0] Validation passed, creating order...")
 
     try {
       const cmo = cmoList.find((c) => c.id === formData.cmoId)
@@ -310,24 +307,15 @@ export default function NewOrderPage() {
         status: "Baru",
       }
 
-      console.log("[v0] Order data prepared:", {
-        ...newOrder,
-        fotoKtpNasabah: "...",
-        fotoKtpPasangan: "...",
-        fotoKk: "...",
-      })
-
       const createdOrder = await orderStore.add(newOrder as Order)
-      console.log("[v0] Order created successfully:", createdOrder.id)
 
       // Send notification (don't block on error)
       try {
         if (formData.cmoId) {
           await notifyNewOrder(createdOrder.id, newOrder.namaNasabah, user.namaLengkap, user.id, formData.cmoId)
-          console.log("[v0] Notification sent")
         }
       } catch (notifError) {
-        console.error("[v0] Notification error (non-blocking):", notifError)
+        console.error("[DB] Notification error (non-blocking):", notifError)
       }
 
       toast({

@@ -185,17 +185,10 @@ export const orderStore = {
   },
   add: async (orderData: Omit<Order, "id" | "createdAt" | "updatedAt" | "notes">): Promise<Order> => {
     try {
-      console.log("[v0] orderStore.add called with:", {
-        ...orderData,
-        fotoKtpNasabah: "...",
-        fotoKtpPasangan: "...",
-        fotoKk: "...",
-      })
       const createdOrder = await dbCreateOrder(orderData)
-      console.log("[v0] Order created in DB:", createdOrder.id)
       return createdOrder
     } catch (error) {
-      console.error("[v0] orderStore.add error:", error)
+      console.error("[DB] orderStore.add error:", error)
       throw error
     }
   },

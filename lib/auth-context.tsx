@@ -36,7 +36,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const storedUser = sessionStore.get()
         if (storedUser) {
           if (!storedUser.id) {
-            console.log("[v0] Missing user ID, clearing session")
             sessionStore.clear()
             setUser(null)
             setIsLoading(false)
@@ -49,18 +48,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setUser(freshUser)
               sessionStore.set(freshUser)
             } else {
-              console.log("[v0] User not found in DB or inactive, clearing session")
               sessionStore.clear()
               setUser(null)
             }
           } catch (error) {
-            console.log("[v0] Error fetching user from DB, clearing session:", error)
             sessionStore.clear()
             setUser(null)
           }
         }
       } catch (error) {
-        console.log("[v0] initAuth error:", error)
         sessionStore.clear()
         setUser(null)
       }
@@ -105,7 +101,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return { success: true }
     } catch (error) {
-      console.log("[v0] Login error:", error)
       return { success: false, error: "Terjadi kesalahan saat login" }
     }
   }
@@ -138,7 +133,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return { success: true, username }
     } catch (error) {
-      console.log("[v0] Register error:", error)
       return { success: false, error: "Terjadi kesalahan saat registrasi" }
     }
   }
@@ -167,7 +161,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return { success: true }
     } catch (error) {
-      console.log("[v0] Change password error:", error)
       return { success: false, error: "Terjadi kesalahan saat mengubah password" }
     }
   }
@@ -180,7 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(updatedUser)
       sessionStore.set(updatedUser)
     } catch (error) {
-      console.log("[v0] Update user error:", error)
+      // Silent failure
     }
   }
 
@@ -193,7 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           sessionStore.set(freshUser)
         }
       } catch (error) {
-        console.log("[v0] Refresh user error:", error)
+        // Silent failure
       }
     }
   }
