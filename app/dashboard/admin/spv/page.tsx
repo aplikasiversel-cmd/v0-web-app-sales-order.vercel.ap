@@ -15,17 +15,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
-import { Search, Plus, Pencil, Trash2, Eye, EyeOff, Loader2 } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
 import { userStore, dealerStore } from "@/lib/data-store"
 import type { User, Dealer } from "@/lib/types"
 import { MERK_LIST, DEALER_BY_MERK } from "@/lib/types"
-import { generateUsername } from "@/lib/utils"
+import { Pencil, Trash2, Plus, Eye, EyeOff, Loader2 } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
+import { generateUsername, validatePassword } from "@/lib/utils"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
+import { useToast } from "@/hooks/use-toast"
 
-type SpvFormData = {
+interface SpvFormData {
   namaLengkap: string
   noHp: string
   merk: string
@@ -39,7 +39,7 @@ const INITIAL_ADD_FORM: SpvFormData = {
   noHp: "",
   merk: "",
   dealer: "",
-  password: "Spv@1234",
+  password: "",
   isActive: true,
 }
 
@@ -81,7 +81,6 @@ function AdminSpvContent() {
   const [submitting, setSubmitting] = useState(false)
   const [dbDealers, setDbDealers] = useState<Dealer[]>([])
   const [customMerks, setCustomMerks] = useState<string[]>([])
-
   const [addFormData, setAddFormData] = useState<SpvFormData>({ ...INITIAL_ADD_FORM })
   const [editFormData, setEditFormData] = useState<SpvFormData>({ ...INITIAL_EDIT_FORM })
 
@@ -148,10 +147,11 @@ function AdminSpvContent() {
       return
     }
 
-    if (password.length < 6) {
+    const validation = validatePassword(password)
+    if (!validation.valid) {
       toast({
-        title: "Error",
-        description: "Password minimal 6 karakter",
+        title: "Password Tidak Valid",
+        description: validation.errors.join(", "),
         variant: "destructive",
       })
       return
@@ -223,16 +223,18 @@ function AdminSpvContent() {
         isActive: isActive,
       }
 
-      if (password && password.length >= 6) {
+      if (password) {
+        const validation = validatePassword(password)
+        if (!validation.valid) {
+          toast({
+            title: "Password Tidak Valid",
+            description: validation.errors.join(", "),
+            variant: "destructive",
+          })
+          setSubmitting(false)
+          return
+        }
         updatedSpv.password = password
-      } else if (password && password.length < 6) {
-        toast({
-          title: "Error",
-          description: "Password minimal 6 karakter",
-          variant: "destructive",
-        })
-        setSubmitting(false)
-        return
       }
 
       await userStore.update(selectedSpv.id, updatedSpv)
@@ -341,7 +343,6 @@ function AdminSpvContent() {
           <CardContent>
             <div className="flex items-center gap-4 mb-4">
               <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Cari SPV..."
                   value={searchQuery}

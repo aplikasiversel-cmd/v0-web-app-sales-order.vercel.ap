@@ -13,8 +13,16 @@ export const PASSWORD_REQUIREMENTS = [
   { label: "Karakter khusus (!@#$%^&*)", test: (p: string) => /[!@#$%^&*]/.test(p) },
 ]
 
-export function validatePassword(password: string): boolean {
-  return PASSWORD_REQUIREMENTS.every((req) => req.test(password))
+export function validatePassword(password: string): { valid: boolean; errors: string[] } {
+  const errors: string[] = []
+
+  PASSWORD_REQUIREMENTS.forEach((req) => {
+    if (!req.test(password || "")) {
+      errors.push(req.label)
+    }
+  })
+
+  return { valid: errors.length === 0, errors }
 }
 
 export function generateUsername(name?: string): string {
@@ -29,17 +37,10 @@ export function generateUsername(name?: string): string {
 
   const cleanName = String(name)
     .toUpperCase()
-    .replace(/[^A-Z\s]/g, "")
-    .trim()
-  const parts = cleanName.split(/\s+/).filter(Boolean)
-  const namePart = parts.length > 0 ? parts.slice(0, 3).join("_") : "USER"
-  const randomChars = Math.random().toString(36).substring(2, 5).toUpperCase()
-  const randomNum = Math.floor(Math.random() * 1000)
-    .toString()
-    .padStart(3, "0")
-  return `${namePart}_${randomChars}${randomNum}`
-}
+    .replace(/\s+/g, "_")
+    .replace(/[^A-Z0-9_]/g, "")
+    .substring(0, 10)
 
-export function generateId(): string {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+  const suffix = Math.random().toString(36).substring(2, 8).toLowerCase()
+  return `${cleanName}_${suffix}`
 }
