@@ -125,12 +125,40 @@ export default function AdminProgramPage() {
 
   const handleEdit = (program: Program) => {
     setSelectedProgram(program)
+
+    const existingTenorMap = new Map<number, { tenor: number; bunga: number; isActive: boolean }>()
+
+    // Add existing tenors to map
+    if (program.tenorBunga && Array.isArray(program.tenorBunga)) {
+      for (const tb of program.tenorBunga) {
+        existingTenorMap.set(tb.tenor, {
+          tenor: tb.tenor,
+          bunga: tb.bunga,
+          isActive: tb.isActive !== false,
+        })
+      }
+    }
+
+    // Ensure all default tenors exist
+    for (const tenor of DEFAULT_TENORS) {
+      if (!existingTenorMap.has(tenor)) {
+        existingTenorMap.set(tenor, {
+          tenor,
+          bunga: 5,
+          isActive: false,
+        })
+      }
+    }
+
+    // Convert to array and sort by tenor ascending
+    const mergedTenors = Array.from(existingTenorMap.values()).sort((a, b) => a.tenor - b.tenor)
+
     setFormData({
       namaProgram: program.namaProgram || "",
       jenisPembiayaan: (program.jenisPembiayaan as JenisPembiayaan) || "",
       merk: program.merk || "",
       tdpPersen: program.tdpPersen?.toString() || "20",
-      tenorBunga: program.tenorBunga || DEFAULT_TENORS.map((tenor) => ({ tenor, bunga: 5, isActive: true })),
+      tenorBunga: mergedTenors,
       isActive: program.isActive,
     })
     setShowEditDialog(true)
@@ -144,12 +172,14 @@ export default function AdminProgramPage() {
   const submitAdd = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    const activeTenors = formData.tenorBunga.filter((tb) => tb.isActive).sort((a, b) => a.tenor - b.tenor)
+
     const newProgram: Omit<Program, "id"> = {
       namaProgram: formData.namaProgram.toUpperCase(),
       jenisPembiayaan: formData.jenisPembiayaan as JenisPembiayaan,
       merk: formData.merk,
       tdpPersen: Number.parseFloat(formData.tdpPersen) || 0,
-      tenorBunga: formData.tenorBunga,
+      tenorBunga: activeTenors,
       isActive: formData.isActive,
       tenor: 0,
       bunga: 0,
@@ -173,12 +203,24 @@ export default function AdminProgramPage() {
     e.preventDefault()
     if (!selectedProgram) return
 
+    const tenorMap = new Map<number, { tenor: number; bunga: number; isActive: boolean }>()
+    for (const tb of formData.tenorBunga) {
+      if (tb.isActive) {
+        tenorMap.set(tb.tenor, {
+          tenor: tb.tenor,
+          bunga: tb.bunga,
+          isActive: true,
+        })
+      }
+    }
+    const activeTenors = Array.from(tenorMap.values()).sort((a, b) => a.tenor - b.tenor)
+
     const updatedProgram: Partial<Program> = {
       namaProgram: formData.namaProgram.toUpperCase(),
       jenisPembiayaan: formData.jenisPembiayaan as JenisPembiayaan,
       merk: formData.merk,
       tdpPersen: Number.parseFloat(formData.tdpPersen) || 0,
-      tenorBunga: formData.tenorBunga,
+      tenorBunga: activeTenors,
       isActive: formData.isActive,
     }
 
@@ -189,19 +231,6 @@ export default function AdminProgramPage() {
     toast({
       title: "Berhasil",
       description: "Program berhasil diperbarui",
-    })
-  }
-
-  const confirmDelete = async () => {
-    if (!selectedProgram) return
-
-    await programStore.delete(selectedProgram.id)
-    loadPrograms()
-    setShowDeleteDialog(false)
-
-    toast({
-      title: "Berhasil",
-      description: "Program berhasil dihapus",
     })
   }
 
@@ -222,8 +251,21 @@ export default function AdminProgramPage() {
     const newTenor = Math.max(...existingTenors) + 12
     setFormData((prev) => ({
       ...prev,
-      tenorBunga: [...prev.tenorBunga, { tenor: newTenor, bunga: 5, isActive: true }],
+      tenorBunga: [...prev.tenorBunga, { tenor: newTenor, bunga: 5, isActive: true }].sort((a, b) => a.tenor - b.tenor),
     }))
+  }
+
+  const confirmDelete = async () => {
+    if (!selectedProgram) return
+
+    await programStore.delete(selectedProgram.id)
+    loadPrograms()
+    setShowDeleteDialog(false)
+
+    toast({
+      title: "Berhasil",
+      description: `Program ${selectedProgram.namaProgram} berhasil dihapus`,
+    })
   }
 
   if (!user || user.role !== "admin") {
@@ -295,8 +337,9 @@ export default function AdminProgramPage() {
                           <div className="flex flex-wrap gap-1">
                             {program.tenorBunga
                               ?.filter((tb) => tb.isActive)
+                              .sort((a, b) => a.tenor - b.tenor)
                               .map((tb) => (
-                                <Badge key={tb.tenor} variant="secondary" className="text-xs">
+                                <Badge key={`${program.id}-${tb.tenor}`} variant="secondary" className="text-xs">
                                   {tb.tenor}bln ({tb.bunga}%)
                                 </Badge>
                               ))}
@@ -436,23 +479,25 @@ export default function AdminProgramPage() {
                 </Button>
               </div>
               <div className="space-y-2 max-h-48 overflow-y-auto">
-                {formData.tenorBunga.map((tb) => (
-                  <div key={tb.tenor} className="flex items-center gap-3 p-2 border rounded-lg">
-                    <Checkbox
-                      checked={tb.isActive}
-                      onCheckedChange={(checked) => handleTenorChange(tb.tenor, "isActive", !!checked)}
-                    />
-                    <span className="w-20 text-sm font-medium">{tb.tenor} Bulan</span>
-                    <Input
-                      type="number"
-                      value={tb.bunga}
-                      onChange={(e) => handleTenorChange(tb.tenor, "bunga", Number.parseFloat(e.target.value) || 0)}
-                      className="w-20 h-8"
-                      step="0.1"
-                    />
-                    <span className="text-sm text-muted-foreground">%</span>
-                  </div>
-                ))}
+                {formData.tenorBunga
+                  .sort((a, b) => a.tenor - b.tenor)
+                  .map((tb) => (
+                    <div key={tb.tenor} className="flex items-center gap-3 p-2 border rounded-lg">
+                      <Checkbox
+                        checked={tb.isActive}
+                        onCheckedChange={(checked) => handleTenorChange(tb.tenor, "isActive", !!checked)}
+                      />
+                      <span className="w-20 text-sm font-medium">{tb.tenor} Bulan</span>
+                      <Input
+                        type="number"
+                        value={tb.bunga}
+                        onChange={(e) => handleTenorChange(tb.tenor, "bunga", Number.parseFloat(e.target.value) || 0)}
+                        className="w-20 h-8"
+                        step="0.1"
+                      />
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </div>
+                  ))}
               </div>
             </div>
 

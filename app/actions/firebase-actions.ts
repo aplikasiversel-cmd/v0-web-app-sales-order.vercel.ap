@@ -98,13 +98,27 @@ export async function getPrograms() {
   // Get all tenor_bunga
   const allTenorBunga = await firestoreREST.getCollection(COLLECTIONS.TENOR_BUNGA)
 
-  // Attach tenor_bunga to each program
-  return programs.map((program: any) => ({
-    ...program,
-    tenorBunga: allTenorBunga
-      .filter((t: any) => t.programId === program.id)
-      .map((t: any) => ({ tenor: t.tenor, bunga: t.bunga, isActive: t.isActive !== false })),
-  }))
+  return programs.map((program: any) => {
+    const programTenors = allTenorBunga.filter((t: any) => t.programId === program.id)
+
+    // Deduplicate by tenor - keep the latest one if duplicates exist
+    const tenorMap = new Map<number, { tenor: number; bunga: number; isActive: boolean }>()
+    for (const t of programTenors) {
+      tenorMap.set(t.tenor, {
+        tenor: t.tenor,
+        bunga: t.bunga,
+        isActive: t.isActive !== false,
+      })
+    }
+
+    // Convert to array and sort by tenor ascending
+    const sortedTenors = Array.from(tenorMap.values()).sort((a, b) => a.tenor - b.tenor)
+
+    return {
+      ...program,
+      tenorBunga: sortedTenors,
+    }
+  })
 }
 
 export async function createProgram(programData: {
@@ -158,21 +172,37 @@ export async function updateProgram(id: string, updates: Record<string, any>) {
 
   await firestoreREST.updateDocument(COLLECTIONS.PROGRAMS, id, updateData)
 
-  // Update tenor_bunga if provided
   if (updates.tenorBunga) {
-    // Delete existing tenor_bunga
-    const existingTenor = await firestoreREST.queryCollection(COLLECTIONS.TENOR_BUNGA, "programId", "==", id)
+    // Get ALL tenor_bunga for this program using collection scan (more reliable than query)
+    const allTenorBunga = await firestoreREST.getCollection(COLLECTIONS.TENOR_BUNGA)
+    const existingTenor = allTenorBunga.filter((t: any) => t.programId === id)
+
+    // Delete all existing tenor_bunga for this program
     for (const t of existingTenor) {
       await firestoreREST.deleteDocument(COLLECTIONS.TENOR_BUNGA, t.id)
     }
 
-    // Create new ones
+    // Create new ones - deduplicated and sorted
+    const tenorMap = new Map<number, { tenor: number; bunga: number; isActive: boolean }>()
     for (const tb of updates.tenorBunga) {
+      if (tb.isActive !== false) {
+        tenorMap.set(tb.tenor, {
+          tenor: tb.tenor,
+          bunga: tb.bunga,
+          isActive: true,
+        })
+      }
+    }
+
+    // Sort and create
+    const sortedTenors = Array.from(tenorMap.values()).sort((a, b) => a.tenor - b.tenor)
+    for (const tb of sortedTenors) {
       const tenorId = uuidv4()
       await firestoreREST.setDocument(COLLECTIONS.TENOR_BUNGA, tenorId, {
         programId: id,
         tenor: tb.tenor,
         bunga: tb.bunga,
+        isActive: true,
       })
     }
   }
