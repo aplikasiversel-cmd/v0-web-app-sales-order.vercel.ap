@@ -17,13 +17,22 @@ export function validatePassword(password: string): boolean {
   return PASSWORD_REQUIREMENTS.every((req) => req.test(password))
 }
 
-export function generateUsername(name: string): string {
-  const cleanName = name
+export function generateUsername(name?: string): string {
+  // If no name provided, generate random username
+  if (!name || typeof name !== "string") {
+    const randomChars = Math.random().toString(36).substring(2, 8).toUpperCase()
+    const randomNum = Math.floor(Math.random() * 10000)
+      .toString()
+      .padStart(4, "0")
+    return `SPV_${randomChars}${randomNum}`
+  }
+
+  const cleanName = String(name)
     .toUpperCase()
     .replace(/[^A-Z\s]/g, "")
     .trim()
   const parts = cleanName.split(/\s+/).filter(Boolean)
-  const namePart = parts.slice(0, 3).join("_")
+  const namePart = parts.length > 0 ? parts.slice(0, 3).join("_") : "USER"
   const randomChars = Math.random().toString(36).substring(2, 5).toUpperCase()
   const randomNum = Math.floor(Math.random() * 1000)
     .toString()

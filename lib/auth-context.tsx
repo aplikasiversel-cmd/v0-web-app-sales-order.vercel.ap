@@ -1,8 +1,9 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-import type { User } from "./types"
+import type { User, UserRole } from "./types"
 import { userStore, sessionStore, generateUsername } from "./data-store"
+import { initializeDefaultData } from "@/app/actions/firebase-actions"
 
 interface AuthContextType {
   user: User | null
@@ -17,6 +18,9 @@ interface AuthContextType {
     merk: string
     dealer: string
     password: string
+    role?: "sales" | "spv"
+    spvId?: string
+    spvName?: string
   }) => Promise<{ success: boolean; error?: string; username?: string }>
   logout: () => void
   changePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>
@@ -33,6 +37,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
+        initializeDefaultData().catch(() => {})
+
         const storedUser = sessionStore.get()
         if (storedUser) {
           if (!storedUser.id) {
@@ -67,7 +73,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (username: string, password: string) => {
     try {
-      const foundUser = await userStore.getByUsername(username)
+      const usernameLC = username.toLowerCase()
+      let foundUser = await userStore.getByUsername(usernameLC)
+
+      if (!foundUser && usernameLC === "admin") {
+        try {
+          await initializeDefaultData()
+          foundUser = await userStore.getByUsername(usernameLC)
+        } catch {
+          // Ignore init errors
+        }
+      }
 
       if (!foundUser) {
         return { success: false, error: "Username tidak ditemukan" }
@@ -84,12 +100,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(foundUser)
       sessionStore.set(foundUser)
 
-      // Check if password change is required
       if (foundUser.isFirstLogin) {
         return { success: true, requirePasswordChange: true }
       }
 
-      // Check if password needs monthly update
       if (foundUser.passwordLastChanged) {
         const lastChanged = new Date(foundUser.passwordLastChanged)
         const now = new Date()
@@ -111,21 +125,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     merk: string
     dealer: string
     password: string
+    role?: "sales" | "spv"
+    spvId?: string
+    spvName?: string
   }) => {
     try {
       const username = generateUsername(data.namaLengkap)
+      const userRole: UserRole = data.role || "sales"
 
       const newUser = await userStore.add({
         username,
         password: data.password,
         namaLengkap: data.namaLengkap.toUpperCase(),
-        role: "sales",
+        role: userRole,
         noHp: data.noHp,
         merk: data.merk,
         dealer: data.dealer,
         isFirstLogin: false,
         passwordLastChanged: new Date().toISOString(),
         isActive: true,
+        spvId: data.spvId || undefined,
+        spvName: data.spvName || undefined,
       })
 
       setUser(newUser)

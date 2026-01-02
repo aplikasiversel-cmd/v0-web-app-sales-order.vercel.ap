@@ -35,12 +35,13 @@ export default function SimulasiPage() {
   const [dbMerks, setDbMerks] = useState<string[]>([])
   const [dbDealers, setDbDealers] = useState<{ merk: string; nama_dealer: string }[]>([])
 
-  const isSales = user?.role === "sales"
-  const userMerk = isSales && user?.merk ? (Array.isArray(user.merk) ? user.merk[0] : user.merk) : ""
+  const isSalesOrSpv = user?.role === "sales" || user?.role === "spv"
+  const userMerk = isSalesOrSpv && user?.merk ? (Array.isArray(user.merk) ? user.merk[0] : user.merk) : ""
+  const userDealer = isSalesOrSpv && user?.dealer ? user.dealer : ""
 
   const [formData, setFormData] = useState({
     merk: userMerk,
-    dealer: isSales && user?.dealer ? user.dealer : "",
+    dealer: userDealer,
     jenisPembiayaan: "" as "Passenger" | "Pick Up" | "Pass Comm" | "Truck" | "EV (Listrik)" | "",
     namaProgram: "",
     otr: 0,
@@ -155,7 +156,7 @@ export default function SimulasiPage() {
     }
 
     tenorBungaList
-      .filter((tb) => tb.isActive)
+      .filter((tb) => tb.isActive !== false)
       .forEach((tb) => {
         let tdpAmount: number
         let angsuranAmount: number
@@ -183,6 +184,7 @@ export default function SimulasiPage() {
         })
       })
 
+    results.sort((a, b) => a.tenor - b.tenor)
     setHasilSimulasi(results)
     setTimeout(() => {
       resultRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -332,7 +334,7 @@ export default function SimulasiPage() {
         <div class="info-section">
           <div class="info-grid">
             <div class="info-item">
-              <div class="info-label">Nama Sales</div>
+              <div class="info-label">Nama ${user.role === "spv" ? "SPV" : "Sales"}</div>
               <div class="info-value">${user.namaLengkap}</div>
             </div>
             <div class="info-item">
@@ -423,7 +425,7 @@ export default function SimulasiPage() {
   }, [user, activeTab])
 
   useEffect(() => {
-    if (isSales && user) {
+    if (isSalesOrSpv && user) {
       const salesMerk = Array.isArray(user.merk) ? user.merk[0] : user.merk
       setFormData((prev) => ({
         ...prev,
@@ -431,7 +433,7 @@ export default function SimulasiPage() {
         dealer: user.dealer || prev.dealer,
       }))
     }
-  }, [user, isSales])
+  }, [user, isSalesOrSpv])
 
   if (!user) return null
 
@@ -462,7 +464,7 @@ export default function SimulasiPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Merk</Label>
-                    {isSales ? (
+                    {isSalesOrSpv ? (
                       <Input value={formData.merk} readOnly className="bg-muted" />
                     ) : (
                       <Select
@@ -485,7 +487,7 @@ export default function SimulasiPage() {
 
                   <div className="space-y-2">
                     <Label>Dealer</Label>
-                    {isSales ? (
+                    {isSalesOrSpv ? (
                       <Input value={formData.dealer} readOnly className="bg-muted" />
                     ) : (
                       <Select
@@ -650,7 +652,8 @@ export default function SimulasiPage() {
                         <span className="text-muted-foreground">Tenor Tersedia</span>
                         <span className="font-medium">
                           {(selectedProgram.tenorBunga || [])
-                            .filter((tb) => tb.isActive)
+                            .filter((tb) => tb.isActive !== false)
+                            .sort((a, b) => a.tenor - b.tenor)
                             .map((tb) => `${tb.tenor} bln`)
                             .join(", ")}
                         </span>

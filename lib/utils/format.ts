@@ -89,3 +89,14 @@ export function validateNoHp(noHp: string): { valid: boolean; error?: string } {
 export function onlyNumbers(value: string): string {
   return value.replace(/\D/g, "").slice(0, 13)
 }
+
+// Format role
+export function formatRole(role: string): string {
+  const roleMap: Record<string, string> = {
+    admin: "Admin",
+    sales: "Sales",
+    cmo: "CMO",
+    cmh: "CMH",
+  }
+  return roleMap[role.toLowerCase()] || role.toUpperCase()
+}

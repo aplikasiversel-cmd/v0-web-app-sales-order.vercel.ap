@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Eye, EyeOff, Loader2, CheckCircle2, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import { useAuth } from "@/lib/auth-context"
 import { DEALER_BY_MERK } from "@/lib/types"
 import { validatePassword, validateNoHp } from "@/lib/utils/format"
 import { getDealers, getMerks } from "@/app/actions/db-actions"
+import { userStore } from "@/lib/data-store"
 import {
   Dialog,
   DialogContent,
@@ -33,6 +34,13 @@ interface DealerItem {
   merk: string
 }
 
+interface SpvItem {
+  id: string
+  namaLengkap: string
+  merk: string
+  dealer: string
+}
+
 export function RegisterForm({ onLogin }: RegisterFormProps) {
   const router = useRouter()
   const { register } = useAuth()
@@ -43,6 +51,8 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
     dealer: "",
     password: "",
     confirmPassword: "",
+    role: "sales" as "sales" | "spv",
+    spvId: "", // Tambah field SPV
   })
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -51,6 +61,7 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
   const [allMerks, setAllMerks] = useState<string[]>([])
   const [availableDealers, setAvailableDealers] = useState<DealerItem[]>([])
   const [filteredDealers, setFilteredDealers] = useState<DealerItem[]>([])
+  const [spvList, setSpvList] = useState<SpvItem[]>([])
   const [passwordValidation, setPasswordValidation] = useState<{ valid: boolean; errors: string[] }>({
     valid: false,
     errors: [],
@@ -93,6 +104,21 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
         console.error("Error loading dealers from database:", error)
       }
 
+      try {
+        const allUsers = await userStore.getAll()
+        const spvUsers = allUsers
+          .filter((u) => u.role === "spv" && u.isActive)
+          .map((u) => ({
+            id: u.id,
+            namaLengkap: u.namaLengkap,
+            merk: u.merk || "",
+            dealer: u.dealer || "",
+          }))
+        setSpvList(spvUsers)
+      } catch (error) {
+        console.error("Error loading SPV list:", error)
+      }
+
       const allDealersMap = new Map<string, DealerItem>()
 
       defaultDealers.forEach((d) => {
@@ -120,11 +146,17 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
     if (formData.merk) {
       const filtered = availableDealers.filter((d) => d.merk === formData.merk)
       setFilteredDealers(filtered)
-      setFormData((prev) => ({ ...prev, dealer: "" }))
+      setFormData((prev) => ({ ...prev, dealer: "", spvId: "" })) // Reset SPV juga
     } else {
       setFilteredDealers([])
     }
   }, [formData.merk, availableDealers])
+
+  useEffect(() => {
+    if (formData.dealer) {
+      setFormData((prev) => ({ ...prev, spvId: "" }))
+    }
+  }, [formData.dealer])
 
   useEffect(() => {
     if (formData.password) {
@@ -133,6 +165,11 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
       setPasswordValidation({ valid: false, errors: [] })
     }
   }, [formData.password])
+
+  const filteredSpvList = useMemo(() => {
+    if (!formData.merk || !formData.dealer) return []
+    return spvList.filter((spv) => spv.merk === formData.merk && spv.dealer === formData.dealer)
+  }, [spvList, formData.merk, formData.dealer])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -157,12 +194,22 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
     setIsLoading(true)
 
     try {
+      const spvData =
+        formData.spvId && formData.spvId !== "none"
+          ? {
+              spvId: formData.spvId,
+              spvName: filteredSpvList.find((s) => s.id === formData.spvId)?.namaLengkap || "",
+            }
+          : {}
+
       const result = await register({
         namaLengkap: formData.namaLengkap,
         noHp: formData.noHp,
         merk: formData.merk,
         dealer: formData.dealer,
         password: formData.password,
+        role: formData.role,
+        ...spvData,
       })
 
       if (!result.success) {
@@ -184,18 +231,39 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
     router.push("/dashboard")
   }
 
+  const getRoleLabel = () => {
+    return formData.role === "spv" ? "SPV (Supervisor)" : "Sales"
+  }
+
   return (
     <>
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">Daftar Sales</CardTitle>
-          <CardDescription className="text-center">Buat Akun Sales Baru</CardDescription>
+          <CardTitle className="text-2xl font-bold text-center">Daftar Akun</CardTitle>
+          <CardDescription className="text-center">Buat Akun Baru</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
             {error && (
               <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg">{error}</div>
             )}
+
+            <div className="space-y-2">
+              <Label htmlFor="role">Daftar Sebagai *</Label>
+              <Select
+                value={formData.role}
+                onValueChange={(value: "sales" | "spv") => setFormData((prev) => ({ ...prev, role: value, spvId: "" }))}
+                disabled={isLoading}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih Jabatan" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sales">Sales</SelectItem>
+                  <SelectItem value="spv">SPV (Supervisor)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="namaLengkap">Nama Lengkap *</Label>
@@ -265,6 +333,40 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
                 </SelectContent>
               </Select>
             </div>
+
+            {formData.role === "sales" && (
+              <div className="space-y-2">
+                <Label htmlFor="spv">SPV (Atasan)</Label>
+                <Select
+                  value={formData.spvId}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, spvId: value }))}
+                  disabled={isLoading || !formData.merk || !formData.dealer}
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        !formData.merk || !formData.dealer
+                          ? "Pilih Merk & Dealer dulu"
+                          : filteredSpvList.length === 0
+                            ? "Tidak ada SPV untuk dealer ini"
+                            : "Pilih SPV (opsional)"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Tidak ada SPV</SelectItem>
+                    {filteredSpvList.map((spv) => (
+                      <SelectItem key={spv.id} value={spv.id}>
+                        {spv.namaLengkap}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  SPV yang tersedia sesuai dengan merk dan dealer yang dipilih
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="password">Password *</Label>
@@ -357,7 +459,7 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
               disabled={isLoading || !passwordValidation.valid || formData.password !== formData.confirmPassword}
             >
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Daftar
+              Daftar sebagai {getRoleLabel()}
             </Button>
             <p className="text-sm text-muted-foreground text-center">
               Sudah Punya Akun?{" "}
@@ -378,7 +480,7 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
             </DialogTitle>
             <DialogDescription asChild>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>Akun Anda telah berhasil dibuat.</p>
+                <p>Akun {getRoleLabel()} Anda telah berhasil dibuat.</p>
                 <div className="p-3 bg-muted rounded-lg">
                   <p className="text-sm text-muted-foreground">Username Anda:</p>
                   <p className="font-mono font-bold text-foreground">{generatedUsername}</p>

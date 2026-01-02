@@ -29,7 +29,7 @@ export function LoginForm({ onRegister }: LoginFormProps) {
     setIsLoading(true)
 
     try {
-      const result = await login(username, password)
+      const result = await login(username.toLowerCase(), password)
 
       if (!result.success) {
         setError(result.error || "Login gagal")

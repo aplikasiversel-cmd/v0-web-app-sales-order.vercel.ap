@@ -1,6 +1,6 @@
 // Tipe data untuk aplikasi MUF Order Management
 
-export type UserRole = "sales" | "cmo" | "cmh" | "admin"
+export type UserRole = "sales" | "cmo" | "cmh" | "admin" | "spv"
 
 export type JenisPembiayaan = "Passenger" | "Pick Up" | "Pass Comm" | "Truck" | "EV (Listrik)"
 
@@ -20,6 +20,10 @@ export interface User {
   passwordLastChanged?: string
   isActive: boolean
   createdAt: string
+  cmhId?: string
+  cmhName?: string
+  spvId?: string
+  spvName?: string
 }
 
 export interface Dealer {
@@ -42,7 +46,7 @@ export interface Program {
   tenorBunga: {
     tenor: number
     bunga: number
-    isActive: boolean
+    isActive?: boolean // Made isActive optional
   }[]
   isActive: boolean
 }

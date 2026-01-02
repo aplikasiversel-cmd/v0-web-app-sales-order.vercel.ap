@@ -4,8 +4,8 @@ import { useEffect, useState } from "react"
 import { DashboardHeader } from "@/components/dashboard/header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuth } from "@/lib/auth-context"
-import { orderStore } from "@/lib/data-store"
-import type { Order, OrderStatus } from "@/lib/types"
+import { orderStore, userStore, dealerStore } from "@/lib/data-store"
+import type { Order, OrderStatus, User, Dealer } from "@/lib/types"
 import {
   BarChart,
   Bar,
@@ -28,20 +28,47 @@ const COLORS = ["#0ea5e9", "#f59e0b", "#f97316", "#06b6d4", "#8b5cf6", "#14b8a6"
 export default function StatistikPage() {
   const { user } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
+  const [salesList, setSalesList] = useState<User[]>([])
+  const [cmoList, setCmoList] = useState<User[]>([])
+  const [dealerList, setDealerList] = useState<Dealer[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const loadOrders = async () => {
+    const loadData = async () => {
       if (user) {
         try {
           setLoading(true)
           let fetchedOrders: Order[] = []
-          if (user.role === "sales") {
+
+          if (user.role === "sales" || user.role === "spv") {
             fetchedOrders = await orderStore.getBySalesId(user.id)
+          } else if (user.role === "cmo") {
+            // CMO sees orders assigned to them
+            const allOrders = await orderStore.getAll()
+            fetchedOrders = allOrders.filter((o) => o.cmoId === user.id)
+          } else if (user.role === "cmh") {
+            // CMH sees orders from CMOs under them
+            const allOrders = await orderStore.getAll()
+            const cmosUnderCmh = await userStore.getByRole("cmo")
+            const cmoIds = cmosUnderCmh.filter((c) => c.cmhId === user.id).map((c) => c.id)
+            cmoIds.push(user.id) // Include own ID
+            fetchedOrders = allOrders.filter((o) => cmoIds.includes(o.cmoId || ""))
           } else {
             fetchedOrders = await orderStore.getAll()
           }
           setOrders(Array.isArray(fetchedOrders) ? fetchedOrders : [])
+
+          // Load sales list
+          const sales = await userStore.getByRole("sales")
+          setSalesList(Array.isArray(sales) ? sales : [])
+
+          // Load CMO list
+          const cmos = await userStore.getByRole("cmo")
+          setCmoList(Array.isArray(cmos) ? cmos : [])
+
+          // Load dealer list
+          const dealers = await dealerStore.getAll()
+          setDealerList(Array.isArray(dealers) ? dealers : [])
         } catch (error) {
           console.error("Error loading orders:", error)
           setOrders([])
@@ -52,7 +79,7 @@ export default function StatistikPage() {
         setLoading(false)
       }
     }
-    loadOrders()
+    loadData()
   }, [user])
 
   if (!user) return null
@@ -94,19 +121,50 @@ export default function StatistikPage() {
     }
   })
 
-  // Merk distribution
-  const merkData = Object.entries(
-    orders.reduce(
-      (acc, order) => {
-        acc[order.merk] = (acc[order.merk] || 0) + 1
-        return acc
-      },
-      {} as Record<string, number>,
-    ),
-  )
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 5)
+  const getTopChartData = () => {
+    if (user.role === "cmo") {
+      // CMO sees Top 5 Sales
+      return {
+        title: "Top 5 Sales",
+        description: "Sales dengan order terbanyak",
+        data: salesList
+          .map((sales) => ({
+            name: sales.namaLengkap,
+            value: orders.filter((o) => o.salesId === sales.id).length,
+          }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 5),
+      }
+    } else if (user.role === "cmh") {
+      // CMH sees Top 5 Dealer
+      return {
+        title: "Top 5 Dealer",
+        description: "Dealer dengan order terbanyak",
+        data: dealerList
+          .map((dealer) => ({
+            name: dealer.namaDealer,
+            value: orders.filter((o) => o.dealer === dealer.namaDealer).length,
+          }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 5),
+      }
+    } else {
+      // Sales, SPV, Admin sees Top 5 CMO
+      return {
+        title: "Top 5 CMO",
+        description: "CMO dengan order terbanyak",
+        data: cmoList
+          .map((cmo) => ({
+            name: cmo.namaLengkap,
+            value: orders.filter((o) => o.cmoId === cmo.id).length,
+          }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 5),
+      }
+    }
+  }
+
+  const topChartConfig = getTopChartData()
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -190,19 +248,18 @@ export default function StatistikPage() {
             </CardContent>
           </Card>
 
-          {/* Top Merk */}
           <Card>
             <CardHeader>
-              <CardTitle>Top 5 Merk</CardTitle>
-              <CardDescription>Merk dengan order terbanyak</CardDescription>
+              <CardTitle>{topChartConfig.title}</CardTitle>
+              <CardDescription>{topChartConfig.description}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={merkData} layout="vertical">
+                  <BarChart data={topChartConfig.data} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" fontSize={12} />
-                    <YAxis dataKey="name" type="category" fontSize={12} width={100} />
+                    <YAxis dataKey="name" type="category" fontSize={12} width={120} />
                     <Tooltip />
                     <Bar dataKey="value" fill="#14b8a6" radius={[0, 4, 4, 0]} />
                   </BarChart>

@@ -102,7 +102,7 @@ export default function NewOrderPage() {
 
   const availableTenors = useMemo(() => {
     if (!selectedProgram || !Array.isArray(selectedProgram.tenorBunga)) return []
-    return selectedProgram.tenorBunga.filter((tb) => tb.isActive)
+    return selectedProgram.tenorBunga.filter((tb) => tb.isActive !== false)
   }, [selectedProgram])
 
   useEffect(() => {

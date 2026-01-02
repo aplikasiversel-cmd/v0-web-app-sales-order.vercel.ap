@@ -19,6 +19,9 @@ import {
   Activity,
   Home,
   Download,
+  Database,
+  Flame,
+  UserCog,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -40,25 +43,25 @@ const navItems: NavItem[] = [
     title: "Dashboard",
     href: "/dashboard",
     icon: Home,
-    roles: ["sales", "cmo", "cmh", "admin"],
+    roles: ["sales", "spv", "cmo", "cmh", "admin"],
   },
   {
     title: "Simulasi Kredit",
     href: "/dashboard/simulasi",
     icon: Calculator,
-    roles: ["sales", "cmo", "cmh"],
+    roles: ["sales", "spv", "cmo", "cmh"],
   },
   {
     title: "Form Order",
     href: "/dashboard/order/new",
     icon: FileText,
-    roles: ["sales"],
+    roles: ["sales", "spv"],
   },
   {
     title: "Tracking Order",
     href: "/dashboard/tracking",
     icon: ClipboardList,
-    roles: ["sales", "cmo", "cmh"],
+    roles: ["sales", "spv", "cmo", "cmh"],
   },
   {
     title: "Aktivitas",
@@ -76,12 +79,18 @@ const navItems: NavItem[] = [
     title: "Statistik",
     href: "/dashboard/statistik",
     icon: BarChart3,
-    roles: ["sales", "cmo", "cmh"],
+    roles: ["sales", "spv", "cmo", "cmh"],
   },
   {
     title: "Kelola Sales",
     href: "/dashboard/admin/sales",
     icon: Users,
+    roles: ["admin"],
+  },
+  {
+    title: "Kelola SPV",
+    href: "/dashboard/admin/spv",
+    icon: UserCog,
     roles: ["admin"],
   },
   {
@@ -100,6 +109,18 @@ const navItems: NavItem[] = [
     title: "Kelola Dealer",
     href: "/dashboard/admin/dealer",
     icon: Building2,
+    roles: ["admin"],
+  },
+  {
+    title: "Backup Data",
+    href: "/dashboard/admin/backup",
+    icon: Database,
+    roles: ["admin"],
+  },
+  {
+    title: "Firebase Setup",
+    href: "/dashboard/admin/firebase-setup",
+    icon: Flame,
     roles: ["admin"],
   },
 ]
@@ -121,6 +142,8 @@ export function DashboardSidebar() {
         return "bg-amber-100 text-amber-700"
       case "cmo":
         return "bg-blue-100 text-blue-700"
+      case "spv":
+        return "bg-teal-100 text-teal-700"
       default:
         return "bg-green-100 text-green-700"
     }

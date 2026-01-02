@@ -739,6 +739,47 @@ export async function createSimulasi(simulasi: Omit<SimulasiKredit, "id" | "crea
   `
 }
 
+export async function getSimulasi(): Promise<SimulasiKredit[]> {
+  try {
+    const rows = await sql`SELECT * FROM simulasi ORDER BY created_at DESC`
+    return rows.map((row) => {
+      let hasilSimulasi: SimulasiKredit["hasilSimulasi"] = []
+      if (row.hasil_simulasi) {
+        if (typeof row.hasil_simulasi === "string") {
+          try {
+            hasilSimulasi = JSON.parse(row.hasil_simulasi)
+          } catch {
+            hasilSimulasi = []
+          }
+        } else if (Array.isArray(row.hasil_simulasi)) {
+          hasilSimulasi = row.hasil_simulasi
+        }
+      }
+
+      return {
+        id: row.id as string,
+        userId: row.user_id as string,
+        userName: row.user_name as string,
+        merk: row.merk as string,
+        dealer: row.dealer as string,
+        jenisPembiayaan: row.jenis_pembiayaan as SimulasiKredit["jenisPembiayaan"],
+        namaProgram: row.nama_program as string,
+        otr: Number(row.otr),
+        mode: row.mode as "tdp" | "angsuran",
+        tdp: row.tdp ? Number(row.tdp) : undefined,
+        angsuran: row.angsuran ? Number(row.angsuran) : undefined,
+        cmoId: row.cmo_id as string | undefined,
+        cmoName: row.cmo_name as string | undefined,
+        hasilSimulasi,
+        createdAt: toISOString(row.created_at as Date | string),
+      }
+    })
+  } catch (error) {
+    console.error("[DB] getSimulasi error:", error)
+    return []
+  }
+}
+
 export async function getSimulasiByUserId(userId: string): Promise<SimulasiKredit[]> {
   try {
     if (!userId || typeof userId !== "string") {
@@ -962,6 +1003,52 @@ export async function createDealer(dealer: Omit<Dealer, "createdAt">): Promise<D
   }
 }
 
+export async function updateDealer(id: string, updates: Partial<Dealer>): Promise<boolean> {
+  try {
+    if (!id || typeof id !== "string") {
+      return false
+    }
+    const fields: string[] = []
+    const values: unknown[] = []
+
+    if (updates.kodeDealer !== undefined) {
+      fields.push("kode_dealer")
+      values.push(updates.kodeDealer)
+    }
+    if (updates.merk !== undefined) {
+      fields.push("merk")
+      values.push(updates.merk)
+    }
+    if (updates.namaDealer !== undefined) {
+      fields.push("nama_dealer")
+      values.push(updates.namaDealer)
+    }
+    if (updates.alamat !== undefined) {
+      fields.push("alamat")
+      values.push(updates.alamat)
+    }
+    if (updates.noTelp !== undefined) {
+      fields.push("no_telp")
+      values.push(updates.noTelp)
+    }
+    if (updates.isActive !== undefined) {
+      fields.push("is_active")
+      values.push(updates.isActive)
+    }
+
+    if (fields.length === 0) return false
+
+    const setClause = fields.map((f, i) => `${f} = $${i + 2}`).join(", ")
+    const query = `UPDATE dealers SET ${setClause} WHERE id = $1`
+
+    await sql.query(query, [id, ...values])
+    return true
+  } catch (error) {
+    console.error("[DB] updateDealer error:", error)
+    return false
+  }
+}
+
 export async function deleteDealer(id: string): Promise<boolean> {
   try {
     await sql`DELETE FROM dealers WHERE id = ${id}`
@@ -1025,6 +1112,129 @@ export async function deleteMerk(id: number): Promise<boolean> {
     return true
   } catch (error) {
     console.error("[DB] deleteMerk error:", error)
+    return false
+  }
+}
+
+// ==================== NOTIFICATION OPERATIONS ====================
+
+export async function createNotification(notification: {
+  userId: string
+  title: string
+  message: string
+  type: string
+  relatedOrderId?: string
+}): Promise<{ id: string } | null> {
+  try {
+    const id = crypto.randomUUID()
+    await sql`
+      INSERT INTO notifications (id, user_id, title, message, type, is_read, related_order_id, created_at)
+      VALUES (${id}, ${notification.userId}, ${notification.title}, ${notification.message}, ${notification.type}, false, ${notification.relatedOrderId || null}, NOW())
+    `
+    return { id }
+  } catch (error) {
+    console.error("[DB] createNotification error:", error)
+    return null
+  }
+}
+
+export async function getNotifications(): Promise<
+  Array<{
+    id: string
+    userId: string
+    title: string
+    message: string
+    type: string
+    isRead: boolean
+    relatedOrderId?: string
+    createdAt: string
+  }>
+> {
+  try {
+    const result = await sql`
+      SELECT id, user_id, title, message, type, is_read, related_order_id, created_at
+      FROM notifications
+      ORDER BY created_at DESC
+      LIMIT 100
+    `
+    return result.map((row: Record<string, unknown>) => ({
+      id: row.id as string,
+      userId: row.user_id as string,
+      title: row.title as string,
+      message: row.message as string,
+      type: row.type as string,
+      isRead: row.is_read as boolean,
+      relatedOrderId: row.related_order_id as string | undefined,
+      createdAt: row.created_at as string,
+    }))
+  } catch (error) {
+    console.error("[DB] getNotifications error:", error)
+    return []
+  }
+}
+
+export async function getNotificationsByUserId(userId: string): Promise<
+  Array<{
+    id: string
+    userId: string
+    title: string
+    message: string
+    type: string
+    isRead: boolean
+    relatedOrderId?: string
+    createdAt: string
+  }>
+> {
+  try {
+    const result = await sql`
+      SELECT id, user_id, title, message, type, is_read, related_order_id, created_at
+      FROM notifications
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC
+      LIMIT 50
+    `
+    return result.map((row: Record<string, unknown>) => ({
+      id: row.id as string,
+      userId: row.user_id as string,
+      title: row.title as string,
+      message: row.message as string,
+      type: row.type as string,
+      isRead: row.is_read as boolean,
+      relatedOrderId: row.related_order_id as string | undefined,
+      createdAt: row.created_at as string,
+    }))
+  } catch (error) {
+    console.error("[DB] getNotificationsByUserId error:", error)
+    return []
+  }
+}
+
+export async function markNotificationAsRead(id: string): Promise<boolean> {
+  try {
+    await sql`UPDATE notifications SET is_read = true WHERE id = ${id}`
+    return true
+  } catch (error) {
+    console.error("[DB] markNotificationAsRead error:", error)
+    return false
+  }
+}
+
+export async function markAllNotificationsAsRead(userId: string): Promise<boolean> {
+  try {
+    await sql`UPDATE notifications SET is_read = true WHERE user_id = ${userId}`
+    return true
+  } catch (error) {
+    console.error("[DB] markAllNotificationsAsRead error:", error)
+    return false
+  }
+}
+
+export async function deleteNotification(id: string): Promise<boolean> {
+  try {
+    await sql`DELETE FROM notifications WHERE id = ${id}`
+    return true
+  } catch (error) {
+    console.error("[DB] deleteNotification error:", error)
     return false
   }
 }
