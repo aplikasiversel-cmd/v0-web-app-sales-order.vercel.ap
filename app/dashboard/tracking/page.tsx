@@ -50,6 +50,18 @@ const STATUS_LIST: OrderStatus[] = [
   "Reject",
 ]
 
+const getStatusTimestamps = (notes: Order["notes"]) => {
+  const timestamps: Partial<Record<OrderStatus, string>> = {}
+  if (!notes || !Array.isArray(notes)) return timestamps
+
+  for (const note of notes) {
+    if (note.status && !timestamps[note.status]) {
+      timestamps[note.status] = note.createdAt
+    }
+  }
+  return timestamps
+}
+
 export default function TrackingPage() {
   const { user } = useAuth()
   const { toast } = useToast()
@@ -449,10 +461,11 @@ export default function TrackingPage() {
   }
 
   const isSales = user?.role === "sales"
+  const isSPV = user?.role === "spv" // Added isSPV
   const isCMO = user?.role === "cmo"
   const isCMH = user?.role === "cmh"
   const isAdmin = user?.role === "admin" // <-- Added isAdmin check
-  const canDownloadFiles = isCMO || isCMH || isAdmin // <-- Added isAdmin to canDownloadFiles
+  const canDownloadFiles = isSales || isSPV || isCMO || isCMH || isAdmin // <-- Updated canDownloadFiles
 
   if (!user) return null
 
@@ -725,6 +738,40 @@ export default function TrackingPage() {
                 {getStatusBadge(selectedOrder.status)}
               </div>
 
+              <div className="bg-muted/30 rounded-lg p-4">
+                <p className="text-sm font-medium mb-3">Riwayat Status</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(() => {
+                    const timestamps =
+                      selectedOrder.notes && selectedOrder.notes.length > 0
+                        ? getStatusTimestamps(selectedOrder.notes)
+                        : {}
+                    const statusList: OrderStatus[] = [
+                      "Baru",
+                      "Claim",
+                      "Cek Slik",
+                      "Proses",
+                      "Pertimbangkan",
+                      "Map In",
+                      "Approve",
+                      "Reject",
+                    ]
+                    return statusList
+                      .map((status) => {
+                        const time = status === "Baru" ? selectedOrder.createdAt : timestamps[status]
+                        if (!time && status !== "Baru") return null
+                        return (
+                          <div key={status} className="text-center p-2 rounded bg-background border">
+                            <p className="text-xs font-medium text-muted-foreground">{status}</p>
+                            <p className="text-[10px] text-primary">{time ? formatTanggalWaktu(time) : "-"}</p>
+                          </div>
+                        )
+                      })
+                      .filter(Boolean)
+                  })()}
+                </div>
+              </div>
+
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Nama Nasabah</p>
@@ -800,9 +847,10 @@ export default function TrackingPage() {
                 </div>
               )}
 
-              {selectedOrder.notes && Array.isArray(selectedOrder.notes) && selectedOrder.notes.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium mb-2">Riwayat Catatan</p>
+              {/* CHANGE: Notes - Always show section, with message if empty */}
+              <div>
+                <p className="text-sm font-medium mb-2">Riwayat Catatan</p>
+                {selectedOrder.notes && Array.isArray(selectedOrder.notes) && selectedOrder.notes.length > 0 ? (
                   <div className="space-y-2 max-h-48 overflow-y-auto scroll-smooth">
                     {selectedOrder.notes.map((note) => (
                       <div
@@ -813,19 +861,20 @@ export default function TrackingPage() {
                           <span className="font-medium">
                             {note.userName || "Unknown"} ({(note.role || "").toUpperCase()})
                           </span>
-                          <span className="text-xs text-muted-foreground">{formatTanggalWaktu(note.createdAt)}</span>
+                          <span className="text-xs text-muted-foreground">{formatTanggalWaktu(note.timestamp)}</span>
                         </div>
-                        <p>{note.note}</p>
+                        <p className="text-muted-foreground">{note.text}</p>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">Belum ada catatan</p>
+                )}
+              </div>
 
-              {/* Documents */}
               <div>
                 <p className="text-sm font-medium mb-2">Dokumen</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {selectedOrder.fotoKtpNasabah && (
                     <div className="space-y-1">
                       <img
@@ -903,6 +952,9 @@ export default function TrackingPage() {
                         </Button>
                       )}
                     </div>
+                  )}
+                  {!selectedOrder.fotoKtpNasabah && !selectedOrder.fotoKtpPasangan && !selectedOrder.fotoKk && (
+                    <p className="text-sm text-muted-foreground italic col-span-full">Belum ada dokumen</p>
                   )}
                 </div>
               </div>

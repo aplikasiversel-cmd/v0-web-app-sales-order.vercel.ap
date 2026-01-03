@@ -1,13 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { FileText, ClipboardList, CheckCircle2, XCircle, Clock } from "lucide-react"
 import { DashboardHeader } from "@/components/dashboard/header"
 import { StatsCard } from "@/components/dashboard/stats-card"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuth } from "@/lib/auth-context"
-import { orderStore } from "@/lib/data-store"
-import type { Order, OrderStatus } from "@/lib/types"
+import { orderStore, userStore } from "@/lib/data-store"
+import type { Order, OrderStatus, User } from "@/lib/types"
 import { formatTanggal } from "@/lib/utils/format"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -18,34 +18,47 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
 
   const isSales = user?.role === "sales"
+  const isSPV = user?.role === "spv"
   const isCMO = user?.role === "cmo"
   const isCMH = user?.role === "cmh"
   const isAdmin = user?.role === "admin"
 
-  useEffect(() => {
-    const loadOrders = async () => {
-      if (user) {
-        setLoading(true)
-        try {
-          let fetchedOrders: Order[]
-          if (user.role === "sales") {
-            fetchedOrders = await orderStore.getBySalesId(user.id)
-          } else if (user.role === "cmo") {
-            fetchedOrders = await orderStore.getByCmoId(user.id)
-          } else {
-            fetchedOrders = await orderStore.getAll()
-          }
-          setOrders(Array.isArray(fetchedOrders) ? fetchedOrders : [])
-        } catch (error) {
-          console.error("Error loading orders:", error)
-          setOrders([])
-        } finally {
-          setLoading(false)
+  const loadOrders = useCallback(async () => {
+    if (user) {
+      setLoading(true)
+      try {
+        let fetchedOrders: Order[] = []
+
+        if (user.role === "sales") {
+          fetchedOrders = await orderStore.getBySalesId(user.id)
+        } else if (user.role === "spv") {
+          // SPV sees orders from sales under them
+          const allOrders = await orderStore.getAll()
+          const salesUnderSPV = await userStore.getByRole("sales")
+          const salesIds = salesUnderSPV.filter((s: User) => s.spvId === user.id).map((s: User) => s.id)
+          fetchedOrders = allOrders.filter((o) => salesIds.includes(o.salesId))
+        } else if (user.role === "cmo") {
+          fetchedOrders = await orderStore.getByCmoId(user.id)
+        } else if (user.role === "cmh") {
+          fetchedOrders = await orderStore.getAll()
+        } else {
+          // Admin sees all orders
+          fetchedOrders = await orderStore.getAll()
         }
+
+        setOrders(Array.isArray(fetchedOrders) ? fetchedOrders : [])
+      } catch (error) {
+        console.error("Error loading orders:", error)
+        setOrders([])
+      } finally {
+        setLoading(false)
       }
     }
-    loadOrders()
   }, [user])
+
+  useEffect(() => {
+    loadOrders()
+  }, [loadOrders])
 
   if (!user) return null
 
@@ -79,7 +92,11 @@ export default function DashboardPage() {
     return <Badge className={cn("font-medium", styles[status])}>{status}</Badge>
   }
 
-  const recentOrders = orders.slice(0, 5)
+  const sortedOrders = [...orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+  const recentOrders = sortedOrders.slice(0, Math.min(sortedOrders.length, 10))
+
+  const totalOrders = orders.length
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -93,7 +110,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           <StatsCard
             title="Total Order"
-            value={orders.length}
+            value={totalOrders}
             icon={FileText}
             iconClassName="bg-primary text-primary-foreground"
           />
@@ -141,7 +158,9 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Order Terbaru</CardTitle>
-            <CardDescription>5 order terakhir</CardDescription>
+            <CardDescription>
+              {recentOrders.length} dari {totalOrders} order
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {recentOrders.length === 0 ? (
@@ -164,7 +183,7 @@ export default function DashboardPage() {
                       {(isCMO || isCMH || isAdmin) && order.salesName && (
                         <p className="text-xs text-blue-600">Sales: {order.salesName}</p>
                       )}
-                      {(isSales || isAdmin) && order.cmoName && (
+                      {(isSales || isSPV || isCMH || isAdmin) && order.cmoName && (
                         <p className="text-xs text-green-600">CMO: {order.cmoName}</p>
                       )}
                     </div>
