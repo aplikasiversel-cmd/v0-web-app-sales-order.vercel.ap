@@ -62,6 +62,24 @@ const getStatusTimestamps = (notes: Order["notes"]) => {
   return timestamps
 }
 
+const getPassedStatuses = (currentStatus: OrderStatus): OrderStatus[] => {
+  const statusFlow: OrderStatus[] = ["Baru", "Claim", "Cek Slik", "Proses", "Pertimbangkan", "Map In", "Approve"]
+  const currentIndex = statusFlow.indexOf(currentStatus)
+
+  // If Reject, return special flow
+  if (currentStatus === "Reject") {
+    return ["Baru", "Claim", "Cek Slik", "Proses", "Reject"]
+  }
+
+  // If Pertimbangkan, show up to Pertimbangkan
+  if (currentStatus === "Pertimbangkan") {
+    return ["Baru", "Claim", "Cek Slik", "Proses", "Pertimbangkan"]
+  }
+
+  if (currentIndex === -1) return ["Baru"]
+  return statusFlow.slice(0, currentIndex + 1)
+}
+
 export default function TrackingPage() {
   const { user } = useAuth()
   const { toast } = useToast()
@@ -728,7 +746,11 @@ export default function TrackingPage() {
 
           {selectedOrder && (
             <div className="space-y-6">
-              <OrderTimeline currentStatus={selectedOrder.status} />
+              {/* use getPassedStatuses to determine current status for OrderTimeline */}
+              <OrderTimeline
+                currentStatus={selectedOrder.status}
+                passedStatuses={getPassedStatuses(selectedOrder.status)}
+              />
 
               <div className="flex items-center justify-between">
                 <div>
@@ -746,28 +768,20 @@ export default function TrackingPage() {
                       selectedOrder.notes && selectedOrder.notes.length > 0
                         ? getStatusTimestamps(selectedOrder.notes)
                         : {}
-                    const statusList: OrderStatus[] = [
-                      "Baru",
-                      "Claim",
-                      "Cek Slik",
-                      "Proses",
-                      "Pertimbangkan",
-                      "Map In",
-                      "Approve",
-                      "Reject",
-                    ]
-                    return statusList
-                      .map((status) => {
-                        const time = status === "Baru" ? selectedOrder.createdAt : timestamps[status]
-                        if (!time && status !== "Baru") return null
-                        return (
-                          <div key={status} className="text-center p-2 rounded bg-background border">
-                            <p className="text-xs font-medium text-muted-foreground">{status}</p>
-                            <p className="text-[10px] text-primary">{time ? formatTanggalWaktu(time) : "-"}</p>
-                          </div>
-                        )
-                      })
-                      .filter(Boolean)
+                    const passedStatuses = getPassedStatuses(selectedOrder.status)
+
+                    return passedStatuses.map((status) => {
+                      // Get timestamp from notes or use createdAt for Baru
+                      const time = status === "Baru" ? selectedOrder.createdAt : timestamps[status]
+                      return (
+                        <div key={status} className="text-center p-2 rounded bg-background border">
+                          <p className="text-xs font-medium text-muted-foreground">{status}</p>
+                          <p className="text-[10px] text-primary">
+                            {time ? formatTanggalWaktu(time) : <span className="italic text-muted-foreground">-</span>}
+                          </p>
+                        </div>
+                      )
+                    })
                   })()}
                 </div>
               </div>
