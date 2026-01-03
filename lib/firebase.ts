@@ -101,7 +101,7 @@ function objectToFirestoreDoc(obj: Record<string, any>): { fields: Record<string
   return { fields }
 }
 
-async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 8000): Promise<Response> {
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000): Promise<Response> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
@@ -121,6 +121,28 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 8
   }
 }
 
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3, timeoutMs = 15000): Promise<Response> {
+  let lastError: Error | null = null
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetchWithTimeout(url, options, timeoutMs)
+      return response
+    } catch (error: any) {
+      lastError = error
+      console.log(`[v0] Attempt ${attempt}/${maxRetries} failed: ${error.message}`)
+
+      if (attempt < maxRetries) {
+        // Wait before retry with exponential backoff
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
+        await new Promise((resolve) => setTimeout(resolve, delay))
+      }
+    }
+  }
+
+  throw lastError || new Error("All retry attempts failed")
+}
+
 // Firestore REST API functions
 export const firestoreREST = {
   // Get all documents in a collection
@@ -130,7 +152,7 @@ export const firestoreREST = {
       const url = `${getBaseUrl()}/${collectionName}${apiKeyParam ? `?${apiKeyParam}` : ""}`
       console.log("[v0] Firestore GET collection:", collectionName)
 
-      const response = await fetchWithTimeout(url, {
+      const response = await fetchWithRetry(url, {
         method: "GET",
         headers: { "Content-Type": "application/json" },
       })
@@ -158,7 +180,7 @@ export const firestoreREST = {
       const url = `${getBaseUrl()}/${collectionName}/${docId}${apiKeyParam ? `?${apiKeyParam}` : ""}`
       console.log("[v0] Firestore GET document:", collectionName, docId)
 
-      const response = await fetchWithTimeout(url, {
+      const response = await fetchWithRetry(url, {
         method: "GET",
         headers: { "Content-Type": "application/json" },
       })
@@ -182,13 +204,18 @@ export const firestoreREST = {
     try {
       const apiKeyParam = getApiKeyParam()
       const url = `${getBaseUrl()}/${collectionName}/${docId}${apiKeyParam ? `?${apiKeyParam}` : ""}`
-      console.log("[v0] Firestore SET document:", collectionName, docId, data)
+      console.log("[v0] Firestore SET document:", collectionName, docId)
 
-      const response = await fetchWithTimeout(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(objectToFirestoreDoc(data)),
-      })
+      const response = await fetchWithRetry(
+        url,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(objectToFirestoreDoc(data)),
+        },
+        3,
+        20000,
+      )
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -216,11 +243,16 @@ export const firestoreREST = {
       const url = `${getBaseUrl()}/${collectionName}/${docId}?${updateMask}${apiKeyParam ? `${separator}${apiKeyParam}` : ""}`
       console.log("[v0] Firestore UPDATE document:", collectionName, docId)
 
-      const response = await fetchWithTimeout(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(objectToFirestoreDoc(updates)),
-      })
+      const response = await fetchWithRetry(
+        url,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(objectToFirestoreDoc(updates)),
+        },
+        3,
+        20000,
+      )
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -243,7 +275,7 @@ export const firestoreREST = {
       const url = `${getBaseUrl()}/${collectionName}/${docId}${apiKeyParam ? `?${apiKeyParam}` : ""}`
       console.log("[v0] Firestore DELETE document:", collectionName, docId)
 
-      const response = await fetchWithTimeout(url, {
+      const response = await fetchWithRetry(url, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
       })
@@ -281,7 +313,7 @@ export const firestoreREST = {
         },
       }
 
-      const response = await fetchWithTimeout(url, {
+      const response = await fetchWithRetry(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(structuredQuery),
@@ -308,7 +340,7 @@ export const firestoreREST = {
 export const db = null
 export const app = null
 
-export async function withTimeout<T>(promise: Promise<T>, timeoutMs = 8000): Promise<T> {
+export async function withTimeout<T>(promise: Promise<T>, timeoutMs = 15000): Promise<T> {
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error("Firebase operation timed out")), timeoutMs)
   })
