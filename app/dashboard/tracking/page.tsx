@@ -847,7 +847,7 @@ export default function TrackingPage() {
                 </div>
               )}
 
-              {/* CHANGE: Notes - Always show section, with message if empty */}
+              {/* CHANGE: Fixed notes display - use correct property names: note.createdAt instead of note.timestamp, note.note instead of note.text */}
               <div>
                 <p className="text-sm font-medium mb-2">Riwayat Catatan</p>
                 {selectedOrder.notes && Array.isArray(selectedOrder.notes) && selectedOrder.notes.length > 0 ? (
@@ -861,9 +861,12 @@ export default function TrackingPage() {
                           <span className="font-medium">
                             {note.userName || "Unknown"} ({(note.role || "").toUpperCase()})
                           </span>
-                          <span className="text-xs text-muted-foreground">{formatTanggalWaktu(note.timestamp)}</span>
+                          <Badge variant="outline" className="text-[10px]">
+                            {note.status}
+                          </Badge>
                         </div>
-                        <p className="text-muted-foreground">{note.text}</p>
+                        <p className="text-muted-foreground">{note.note}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{formatTanggalWaktu(note.createdAt)}</p>
                       </div>
                     ))}
                   </div>

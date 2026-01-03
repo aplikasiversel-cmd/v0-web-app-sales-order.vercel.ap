@@ -32,6 +32,7 @@ export default function StatistikPage() {
   const [cmoList, setCmoList] = useState<User[]>([])
   const [dealerList, setDealerList] = useState<Dealer[]>([])
   const [loading, setLoading] = useState(true)
+  const [salesIdsUnderSPV, setSalesIdsUnderSPV] = useState<string[]>([])
 
   const loadData = useCallback(async () => {
     if (user) {
@@ -41,33 +42,28 @@ export default function StatistikPage() {
 
         if (user.role === "sales") {
           fetchedOrders = await orderStore.getBySalesId(user.id)
-        } else if (user.role === "spv") {
-          // SPV sees orders from sales under them
-          const allOrders = await orderStore.getAll()
-          const salesUnderSPV = await userStore.getByRole("sales")
-          const salesIds = salesUnderSPV.filter((s: User) => s.spvId === user.id).map((s: User) => s.id)
-          fetchedOrders = allOrders.filter((o) => salesIds.includes(o.salesId))
         } else if (user.role === "cmo") {
-          // CMO sees orders assigned to them
           fetchedOrders = await orderStore.getByCmoId(user.id)
-        } else if (user.role === "cmh") {
-          fetchedOrders = await orderStore.getAll()
+        } else if (user.role === "spv") {
+          const allSales = await userStore.getByRole("sales")
+          const salesUnderSPV = allSales.filter((s: User) => s.spvId === user.id)
+          const salesIds = salesUnderSPV.map((s: User) => s.id)
+          setSalesIdsUnderSPV(salesIds)
+
+          const allOrders = await orderStore.getAll()
+          fetchedOrders = allOrders.filter((order: Order) => salesIds.includes(order.salesId))
         } else {
-          // Admin sees all
           fetchedOrders = await orderStore.getAll()
         }
 
         setOrders(Array.isArray(fetchedOrders) ? fetchedOrders : [])
 
-        // Load sales list
         const sales = await userStore.getByRole("sales")
         setSalesList(Array.isArray(sales) ? sales : [])
 
-        // Load CMO list
         const cmos = await userStore.getByRole("cmo")
         setCmoList(Array.isArray(cmos) ? cmos : [])
 
-        // Load dealer list
         const dealers = await dealerStore.getAll()
         setDealerList(Array.isArray(dealers) ? dealers : [])
       } catch (error) {
@@ -98,7 +94,6 @@ export default function StatistikPage() {
     )
   }
 
-  // Status distribution data
   const statusData: { name: string; value: number }[] = (
     ["Baru", "Claim", "Cek Slik", "Proses", "Pertimbangkan", "Map In", "Approve", "Reject"] as OrderStatus[]
   ).map((status) => ({
@@ -106,7 +101,6 @@ export default function StatistikPage() {
     value: orders.filter((o) => o.status === status).length,
   }))
 
-  // Monthly data (last 6 months)
   const monthlyData = Array.from({ length: 6 }, (_, i) => {
     const date = new Date()
     date.setMonth(date.getMonth() - (5 - i))
@@ -126,7 +120,6 @@ export default function StatistikPage() {
 
   const getTopChartData = () => {
     if (user.role === "cmo") {
-      // CMO sees Top 5 Sales
       return {
         title: "Top 5 Sales",
         description: "Sales dengan order terbanyak",
@@ -140,29 +133,52 @@ export default function StatistikPage() {
           .slice(0, 5),
       }
     } else if (user.role === "cmh" || user.role === "admin") {
+      const dealerCounts: Record<string, number> = {}
+      orders.forEach((order) => {
+        if (order.dealer) {
+          dealerCounts[order.dealer] = (dealerCounts[order.dealer] || 0) + 1
+        }
+      })
+
       return {
         title: "Top 5 Dealer",
         description: "Dealer dengan order terbanyak",
-        data: dealerList
-          .map((dealer) => ({
-            name: dealer.namaDealer,
-            value: orders.filter((o) => o.dealer === dealer.namaDealer).length,
-          }))
-          .filter((d) => d.value > 0)
+        data: Object.entries(dealerCounts)
+          .map(([name, value]) => ({ name, value }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 5),
+      }
+    } else if (user.role === "spv") {
+      const cmoCounts: Record<string, number> = {}
+      orders.forEach((order) => {
+        if (order.cmoName) {
+          cmoCounts[order.cmoName] = (cmoCounts[order.cmoName] || 0) + 1
+        }
+      })
+
+      return {
+        title: "Top 5 CMO",
+        description: "CMO dengan order terbanyak (dari Sales Anda)",
+        data: Object.entries(cmoCounts)
+          .map(([name, value]) => ({ name, value }))
+          .filter((d) => d.name && d.name.trim() !== "")
           .sort((a, b) => b.value - a.value)
           .slice(0, 5),
       }
     } else {
-      // Sales, SPV sees Top 5 CMO
+      const cmoCounts: Record<string, number> = {}
+      orders.forEach((order) => {
+        if (order.cmoName) {
+          cmoCounts[order.cmoName] = (cmoCounts[order.cmoName] || 0) + 1
+        }
+      })
+
       return {
         title: "Top 5 CMO",
         description: "CMO dengan order terbanyak",
-        data: cmoList
-          .map((cmo) => ({
-            name: cmo.namaLengkap,
-            value: orders.filter((o) => o.cmoId === cmo.id).length,
-          }))
-          .filter((d) => d.value > 0)
+        data: Object.entries(cmoCounts)
+          .map(([name, value]) => ({ name, value }))
+          .filter((d) => d.name && d.name.trim() !== "")
           .sort((a, b) => b.value - a.value)
           .slice(0, 5),
       }
@@ -188,7 +204,6 @@ export default function StatistikPage() {
         )}
 
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* Status Distribution Pie Chart */}
           <Card>
             <CardHeader>
               <CardTitle>Distribusi Status Order</CardTitle>
@@ -223,7 +238,6 @@ export default function StatistikPage() {
             </CardContent>
           </Card>
 
-          {/* Monthly Trend */}
           <Card>
             <CardHeader>
               <CardTitle>Tren Order Bulanan</CardTitle>
@@ -247,7 +261,6 @@ export default function StatistikPage() {
             </CardContent>
           </Card>
 
-          {/* Status Bar Chart */}
           <Card>
             <CardHeader>
               <CardTitle>Jumlah Order Per Status</CardTitle>
@@ -293,7 +306,6 @@ export default function StatistikPage() {
           </Card>
         </div>
 
-        {/* Summary Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-4">
