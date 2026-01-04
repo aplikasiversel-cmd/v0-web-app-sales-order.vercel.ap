@@ -1,4 +1,4 @@
-import type { User, Program, Order, SimulasiKredit, Aktivitas } from "./types"
+import type { User, Program, Order, SimulasiKredit, Aktivitas, OrderNote } from "./types"
 import {
   getUsers,
   getUserById,
@@ -16,7 +16,8 @@ import {
   createOrder as dbCreateOrder,
   updateOrder as dbUpdateOrder,
   deleteOrder as dbDeleteOrder,
-  createOrderNote as dbAddOrderNote,
+  createOrderNote as dbCreateOrderNote,
+  getOrderNotesByOrderId as dbGetOrderNotesByOrderId,
   createSimulasi as dbCreateSimulasi,
   getSimulasiByUserId,
   getSimulasi,
@@ -38,7 +39,6 @@ import {
   markAllNotificationsAsRead as dbMarkAllNotificationsAsRead,
   initializeDefaultData,
 } from "@/app/actions/firebase-actions"
-import type { OrderNote } from "./types"
 
 // Helper untuk generate ID
 export function generateId(): string {
@@ -306,7 +306,7 @@ export const orderStore = {
     await dbDeleteOrder(id)
   },
   addNote: async (orderId: string, note: OrderNote): Promise<void> => {
-    await dbAddOrderNote({
+    await dbCreateOrderNote({
       orderId,
       userId: note.userId,
       userName: note.userName,
@@ -508,6 +508,55 @@ export const notificationStore = {
   },
   markAllAsRead: async (userId: string) => {
     await dbMarkAllNotificationsAsRead(userId)
+  },
+}
+
+// Note Store - Uses Neon
+export const noteStore = {
+  getByOrderId: async (orderId: string): Promise<OrderNote[]> => {
+    try {
+      const notes = await dbGetOrderNotesByOrderId(orderId)
+      return Array.isArray(notes)
+        ? notes.map((n: any) => ({
+            id: n.id,
+            orderId: n.orderId,
+            userId: n.userId,
+            userName: n.userName,
+            role: n.role,
+            note: n.note,
+            status: n.status,
+            createdAt: n.createdAt,
+          }))
+        : []
+    } catch (error) {
+      console.error("Error getting notes by order id:", error)
+      return []
+    }
+  },
+  add: async (noteData: OrderNote): Promise<OrderNote> => {
+    try {
+      const result = await dbCreateOrderNote({
+        orderId: noteData.orderId || (noteData as any).oderId,
+        userId: noteData.userId,
+        userName: noteData.userName,
+        role: noteData.role,
+        note: noteData.note,
+        status: noteData.status,
+      })
+      return {
+        id: result.id,
+        orderId: result.orderId,
+        userId: result.userId,
+        userName: result.userName,
+        role: result.role,
+        note: result.note,
+        status: result.status,
+        createdAt: result.createdAt,
+      }
+    } catch (error) {
+      console.error("Error adding note:", error)
+      throw error
+    }
   },
 }
 

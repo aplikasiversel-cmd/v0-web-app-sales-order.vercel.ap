@@ -1,10 +1,9 @@
 "use client"
 
 import type React from "react"
-
+import type { User, Program, JenisPembiayaan, Order } from "@/lib/types"
 import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { Save, Upload, X, Loader2 } from "lucide-react"
 import { DashboardHeader } from "@/components/dashboard/header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -16,50 +15,76 @@ import { InputRupiah } from "@/components/ui/input-rupiah"
 import { InputPhone } from "@/components/ui/input-phone"
 import { useAuth } from "@/lib/auth-context"
 import { userStore, programStore, orderStore } from "@/lib/data-store"
-import type { User, Program, JenisPembiayaan, Order } from "@/lib/types"
 import { JENIS_PEMBIAYAAN } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
-import { formatRupiah } from "@/lib/utils/format"
+import { formatRupiah } from "@/lib/utils"
+import { Save, Upload, X, Loader2 } from "lucide-react"
 import { notifyNewOrder } from "@/app/actions/notification-actions"
+import Image from "next/image"
+
+interface OrderFormData {
+  namaNasabah: string
+  noHp: string
+  namaPasangan: string
+  jenisPembiayaan: JenisPembiayaan | ""
+  namaProgram: string
+  typeUnit: string
+  otr: number
+  tdp: number
+  tenor: number
+  angsuran: number
+  cmoId: string
+  catatanKhusus: string
+  fotoKtpNasabah: string
+  fotoKtpPasangan: string
+  fotoKk: string
+}
 
 export default function NewOrderPage() {
   const router = useRouter()
-  const { user } = useAuth()
+  const { user: authUser } = useAuth()
   const { toast } = useToast()
+  const [user, setUser] = useState<User | null>(authUser)
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [cmoList, setCmoList] = useState<User[]>([])
   const [programs, setPrograms] = useState<Program[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [loading, setLoading] = useState(true)
   const [selectedProgram, setSelectedProgram] = useState<Program | null>(null)
-
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<OrderFormData>({
     namaNasabah: "",
-    fotoKtpNasabah: "",
-    namaPasangan: "",
-    fotoKtpPasangan: "",
-    fotoKk: "",
     noHp: "",
-    typeUnit: "",
-    jenisPembiayaan: "" as JenisPembiayaan | "",
+    namaPasangan: "",
+    jenisPembiayaan: "",
     namaProgram: "",
+    typeUnit: "",
     otr: 0,
     tdp: 0,
-    angsuran: 0,
     tenor: 0,
+    angsuran: 0,
     cmoId: "",
     catatanKhusus: "",
+    fotoKtpNasabah: "",
+    fotoKtpPasangan: "",
+    fotoKk: "",
   })
 
-  const userMerk = useMemo(() => {
-    if (!user?.merk) return ""
-    if (Array.isArray(user.merk)) return user.merk[0] || ""
-    return user.merk
-  }, [user])
+  const userMerk = user?.merk || ""
+  const userDealer = user?.dealer || ""
 
   const filteredPrograms = useMemo(() => {
     if (!userMerk || !formData.jenisPembiayaan || !Array.isArray(programs)) return []
     return programs.filter((p) => p.merk === userMerk && p.jenisPembiayaan === formData.jenisPembiayaan && p.isActive)
   }, [userMerk, formData.jenisPembiayaan, programs])
+
+  const uniqueCmoList = useMemo(() => {
+    const seen = new Set<string>()
+    return cmoList.filter((cmo) => {
+      // Filter by username to remove duplicates
+      if (seen.has(cmo.username)) return false
+      seen.add(cmo.username)
+      return cmo.isActive
+    })
+  }, [cmoList])
 
   useEffect(() => {
     const loadData = async () => {
@@ -79,13 +104,11 @@ export default function NewOrderPage() {
     loadData()
   }, [])
 
-  // Reset namaProgram when jenisPembiayaan changes
   useEffect(() => {
     setFormData((prev) => ({ ...prev, namaProgram: "", tenor: 0, angsuran: 0 }))
     setSelectedProgram(null)
   }, [formData.jenisPembiayaan])
 
-  // Update selected program when namaProgram changes
   useEffect(() => {
     if (formData.namaProgram) {
       const program = programs.find((p) => p.namaProgram === formData.namaProgram)
@@ -139,7 +162,6 @@ export default function NewOrderPage() {
       setFormData((prev) => ({ ...prev, [field]: compressedDataUrl }))
     } catch (error) {
       console.error("Error processing image:", error)
-      // Fallback to original method
       const reader = new FileReader()
       reader.onload = (e) => {
         const result = e.target?.result as string
@@ -196,7 +218,6 @@ export default function NewOrderPage() {
       return
     }
 
-    // Validation
     if (!formData.namaNasabah.trim()) {
       toast({
         title: "Form Tidak Lengkap",
@@ -278,7 +299,7 @@ export default function NewOrderPage() {
       return
     }
 
-    setIsLoading(true)
+    setSubmitting(true)
 
     try {
       const cmo = cmoList.find((c) => c.id === formData.cmoId)
@@ -294,7 +315,7 @@ export default function NewOrderPage() {
         noHp: formData.noHp.trim(),
         typeUnit: formData.typeUnit.toUpperCase().trim(),
         merk: userMerk,
-        dealer: user.dealer || "",
+        dealer: userDealer,
         jenisPembiayaan: formData.jenisPembiayaan as JenisPembiayaan,
         namaProgram: formData.namaProgram,
         otr: formData.otr,
@@ -309,7 +330,6 @@ export default function NewOrderPage() {
 
       const createdOrder = await orderStore.add(newOrder as Order)
 
-      // Send notification (don't block on error)
       try {
         if (formData.cmoId) {
           await notifyNewOrder(createdOrder.id, newOrder.namaNasabah, user.namaLengkap, user.id, formData.cmoId)
@@ -333,7 +353,7 @@ export default function NewOrderPage() {
         variant: "destructive",
       })
     } finally {
-      setIsLoading(false)
+      setSubmitting(false)
     }
   }
 
@@ -645,7 +665,7 @@ export default function NewOrderPage() {
                       <SelectValue placeholder="Pilih CMO (opsional)" />
                     </SelectTrigger>
                     <SelectContent>
-                      {cmoList.map((cmo) => (
+                      {uniqueCmoList.map((cmo) => (
                         <SelectItem key={cmo.id} value={cmo.id}>
                           {cmo.namaLengkap}
                         </SelectItem>
@@ -668,11 +688,11 @@ export default function NewOrderPage() {
 
             {/* Submit Button */}
             <div className="flex justify-end gap-4">
-              <Button type="button" variant="outline" onClick={() => router.back()} disabled={isLoading}>
+              <Button type="button" variant="outline" onClick={() => router.back()} disabled={submitting}>
                 Batal
               </Button>
-              <Button type="submit" disabled={isLoading}>
-                {isLoading ? (
+              <Button type="submit" disabled={submitting}>
+                {submitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Menyimpan...

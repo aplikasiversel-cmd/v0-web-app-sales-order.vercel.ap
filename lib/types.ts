@@ -87,6 +87,7 @@ export interface Order {
 
 export interface OrderNote {
   id: string
+  orderId?: string // Add orderId field for linking to order
   userId: string
   userName: string
   role: UserRole
@@ -147,7 +148,7 @@ export interface Aktivitas {
 
 // Data awal dealer berdasarkan merk
 export const DEALER_BY_MERK: Record<string, string[]> = {
-  Honda: ["ISTANA MOBIL TRIO MOTOR", "ISTANA MOBIL TRIO BANJARBRU", "ISTANA MOBIL TRIO RAYA"],
+  Honda: ["ISTANA MOBIL TRIO MOTOR", "ISTANA MOBIL TRIO BANJARMASIN", "ISTANA MOBIL TRIO RAYA"],
   Daihatsu: [
     "ASTRA DAIHATSU-BANJARMASIN",
     "ASTRA DAIHATSU TBK – BANJARBARU",

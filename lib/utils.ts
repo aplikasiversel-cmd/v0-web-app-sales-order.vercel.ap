@@ -5,6 +5,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export function formatRupiah(value: number): string {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
+export function generateId(): string {
+  return crypto.randomUUID()
+}
+
 export const PASSWORD_REQUIREMENTS = [
   { label: "Minimal 8 karakter", test: (p: string) => p.length >= 8 },
   { label: "Huruf besar (A-Z)", test: (p: string) => /[A-Z]/.test(p) },
