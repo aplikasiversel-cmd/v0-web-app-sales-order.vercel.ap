@@ -595,7 +595,7 @@ export async function markAllNotificationsAsRead(userId: string) {
 
 let initializationPromise: Promise<{ success: boolean; error?: any; cached?: boolean }> | null = null
 let lastInitTime = 0
-const INIT_COOLDOWN = 60000 // 1 minute cooldown
+const INIT_COOLDOWN = 300000 // 5 minutes cooldown
 
 export async function initializeDefaultData() {
   const now = Date.now()
@@ -614,60 +614,59 @@ export async function initializeDefaultData() {
       // Check if admin exists
       const adminUser = await getUserByUsername("admin")
 
-      if (!adminUser) {
-        // Create default admin
+      if (adminUser) {
+        return { success: true, cached: true }
+      }
+
+      // Create default admin
+      await createUser({
+        username: "admin",
+        password: "Admin@123",
+        namaLengkap: "Administrator",
+        role: "admin",
+        isActive: true,
+      })
+
+      const cmo1 = await getUserByUsername("25029956")
+      if (!cmo1) {
         await createUser({
-          username: "admin",
-          password: "Admin@123",
-          namaLengkap: "Administrator",
-          role: "admin",
+          username: "25029956",
+          password: "cmo1234",
+          namaLengkap: "FAISAL FAJAR",
+          role: "cmo",
+          jabatan: "CMO",
           isActive: true,
         })
       }
 
-      if (!adminUser) {
-        const cmo1 = await getUserByUsername("25029956")
-        if (!cmo1) {
-          await createUser({
-            username: "25029956",
-            password: "cmo1234",
-            namaLengkap: "FAISAL FAJAR",
-            role: "cmo",
-            jabatan: "CMO",
-            isActive: true,
-          })
-        }
+      const cmo2 = await getUserByUsername("24028259")
+      if (!cmo2) {
+        await createUser({
+          username: "24028259",
+          password: "cmo1234",
+          namaLengkap: "ROBBY ANGGARA SASMITA",
+          role: "cmo",
+          jabatan: "CMO",
+          isActive: true,
+        })
+      }
 
-        const cmo2 = await getUserByUsername("24028259")
-        if (!cmo2) {
-          await createUser({
-            username: "24028259",
-            password: "cmo1234",
-            namaLengkap: "ROBBY ANGGARA SASMITA",
-            role: "cmo",
-            jabatan: "CMO",
-            isActive: true,
-          })
-        }
-
-        const cmh1 = await getUserByUsername("23025309")
-        if (!cmh1) {
-          await createUser({
-            username: "23025309",
-            password: "cmh1234",
-            namaLengkap: "M SAHID",
-            role: "cmh",
-            jabatan: "CMH",
-            isActive: true,
-          })
-        }
+      const cmh1 = await getUserByUsername("23025309")
+      if (!cmh1) {
+        await createUser({
+          username: "23025309",
+          password: "cmh1234",
+          namaLengkap: "M SAHID",
+          role: "cmh",
+          jabatan: "CMH",
+          isActive: true,
+        })
       }
 
       // Check if merks exist
       const merks = await getMerks()
 
       if (merks.length === 0) {
-        // Create default merks
         const defaultMerks = [
           "Honda",
           "Daihatsu",
@@ -687,8 +686,13 @@ export async function initializeDefaultData() {
           "JAECOO",
         ]
 
-        for (const nama of defaultMerks) {
-          await createMerk(nama, true)
+        // Create merks in batches of 4 with delay between batches
+        for (let i = 0; i < defaultMerks.length; i += 4) {
+          const batch = defaultMerks.slice(i, i + 4)
+          await Promise.all(batch.map((nama) => createMerk(nama, true)))
+          if (i + 4 < defaultMerks.length) {
+            await new Promise((resolve) => setTimeout(resolve, 500)) // 500ms delay between batches
+          }
         }
       }
 
@@ -699,7 +703,7 @@ export async function initializeDefaultData() {
     } finally {
       setTimeout(() => {
         initializationPromise = null
-      }, 5000)
+      }, 30000) // Keep promise cached for 30 seconds
     }
   })()
 

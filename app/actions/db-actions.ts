@@ -1238,3 +1238,178 @@ export async function deleteNotification(id: string): Promise<boolean> {
     return false
   }
 }
+
+// ==================== ORDER NOTES OPERATIONS ====================
+
+export async function createOrderNote(note: {
+  orderId: string
+  userId: string
+  userName: string
+  role: string
+  note: string
+  status?: string
+}): Promise<{
+  id: string
+  orderId: string
+  userId: string
+  userName: string
+  role: string
+  note: string
+  status?: string
+  createdAt: string
+}> {
+  const id = crypto.randomUUID()
+  const now = new Date().toISOString()
+
+  await sql`
+    INSERT INTO order_notes (id, order_id, user_id, user_name, role, note, status, created_at)
+    VALUES (${id}::TEXT, ${note.orderId}::TEXT, ${note.userId}::TEXT, ${note.userName}, ${note.role}, ${note.note}, ${note.status || null}, ${now}::TIMESTAMP)
+  `
+
+  return {
+    id,
+    orderId: note.orderId,
+    userId: note.userId,
+    userName: note.userName,
+    role: note.role,
+    note: note.note,
+    status: note.status,
+    createdAt: now,
+  }
+}
+
+export async function getOrderNotesByOrderId(orderId: string): Promise<
+  Array<{
+    id: string
+    orderId: string
+    userId: string
+    userName: string
+    role: string
+    note: string
+    status?: string
+    createdAt: string
+  }>
+> {
+  try {
+    if (!orderId) return []
+    const rows = await sql`
+      SELECT id, order_id, user_id, user_name, role, note, status, created_at
+      FROM order_notes
+      WHERE order_id = ${orderId}::TEXT
+      ORDER BY created_at DESC
+    `
+    return rows.map((row: Record<string, unknown>) => ({
+      id: row.id as string,
+      orderId: row.order_id as string,
+      userId: row.user_id as string,
+      userName: row.user_name as string,
+      role: row.role as string,
+      note: row.note as string,
+      status: row.status as string | undefined,
+      createdAt: toISOString(row.created_at as Date | string),
+    }))
+  } catch (error) {
+    console.error("[DB] getOrderNotesByOrderId error:", error)
+    return []
+  }
+}
+
+export async function getAllOrderNotes(): Promise<
+  Array<{
+    id: string
+    orderId: string
+    userId: string
+    userName: string
+    role: string
+    note: string
+    status?: string
+    createdAt: string
+  }>
+> {
+  try {
+    const rows = await sql`
+      SELECT id, order_id, user_id, user_name, role, note, status, created_at
+      FROM order_notes
+      ORDER BY created_at DESC
+    `
+    return rows.map((row: Record<string, unknown>) => ({
+      id: row.id as string,
+      orderId: row.order_id as string,
+      userId: row.user_id as string,
+      userName: row.user_name as string,
+      role: row.role as string,
+      note: row.note as string,
+      status: row.status as string | undefined,
+      createdAt: toISOString(row.created_at as Date | string),
+    }))
+  } catch (error) {
+    console.error("[DB] getAllOrderNotes error:", error)
+    return []
+  }
+}
+
+// ==================== INITIALIZATION ====================
+
+let isInitializing = false
+let lastInitTime = 0
+const INIT_COOLDOWN = 5 * 60 * 1000 // 5 minutes cooldown
+
+export async function initializeDefaultData(): Promise<void> {
+  // Prevent concurrent initialization
+  if (isInitializing) return
+
+  // Cooldown check
+  const now = Date.now()
+  if (now - lastInitTime < INIT_COOLDOWN) return
+
+  isInitializing = true
+  lastInitTime = now
+
+  try {
+    // Check if admin already exists - if so, skip initialization
+    const existingAdmin = await getUserByUsername("admin")
+    if (existingAdmin) {
+      isInitializing = false
+      return
+    }
+
+    // Create admin user
+    const adminId = crypto.randomUUID()
+    await sql`
+      INSERT INTO users (id, username, password, nama_lengkap, role, is_active, is_first_login, created_at)
+      VALUES (${adminId}::TEXT, 'admin', 'admin123', 'Administrator', 'admin', true, false, NOW())
+      ON CONFLICT (username) DO NOTHING
+    `
+
+    // Create default merks if none exist
+    const existingMerks = await getMerks()
+    if (existingMerks.length === 0) {
+      const defaultMerks = [
+        { nama: "DAIHATSU", isDefault: true },
+        { nama: "HONDA", isDefault: false },
+        { nama: "SUZUKI", isDefault: false },
+        { nama: "TOYOTA", isDefault: false },
+        { nama: "MITSUBISHI", isDefault: false },
+        { nama: "NISSAN", isDefault: false },
+        { nama: "MAZDA", isDefault: false },
+        { nama: "ISUZU", isDefault: false },
+        { nama: "HINO", isDefault: false },
+        { nama: "HYUNDAI", isDefault: false },
+        { nama: "KIA", isDefault: false },
+        { nama: "WULING", isDefault: false },
+        { nama: "DFSK", isDefault: false },
+        { nama: "CHERY", isDefault: false },
+        { nama: "MG", isDefault: false },
+        { nama: "BYD", isDefault: false },
+      ]
+
+      for (const merk of defaultMerks) {
+        await createMerk(merk.nama, merk.isDefault)
+      }
+    }
+  } catch (error) {
+    console.error("[DB] initializeDefaultData error:", error)
+  } finally {
+    isInitializing = false
+  }
+}

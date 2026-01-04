@@ -159,7 +159,7 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 1
   }
 }
 
-async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2, timeoutMs = 15000): Promise<Response> {
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3, timeoutMs = 15000): Promise<Response> {
   let lastError: Error | null = null
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -168,8 +168,14 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2,
       const response = await fetchWithTimeout(url, options, timeoutMs)
 
       if (response.status === 429) {
-        console.log(`[v0] Rate limited (429), returning empty response`)
-        return response
+        if (attempt < maxRetries) {
+          const delay = Math.min(2000 * attempt, 8000) // Wait 2s, 4s, 8s
+          console.log(`[v0] Rate limited (429), waiting ${delay}ms before retry ${attempt + 1}/${maxRetries}`)
+          await new Promise((resolve) => setTimeout(resolve, delay))
+          continue
+        }
+        // On final attempt, throw error instead of returning broken response
+        throw new Error("Firebase rate limit exceeded after retries")
       }
 
       return response
@@ -177,7 +183,7 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2,
       lastError = error
 
       if (attempt < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 3000)
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
         await new Promise((resolve) => setTimeout(resolve, delay))
       }
     }

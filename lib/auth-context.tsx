@@ -1,9 +1,8 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-import type { User, UserRole } from "./types"
-import { userStore, sessionStore, generateUsername } from "./data-store"
-import { initializeDefaultData } from "@/app/actions/firebase-actions"
+import type { User } from "./types"
+import { userStore, sessionStore, generateUsername, initializeDefaultData } from "./data-store"
 
 interface AuthContextType {
   user: User | null
@@ -31,7 +30,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 let isInitialized = false
-const INIT_KEY = "muf_data_initialized_v2"
+const INIT_KEY = "muf_data_initialized_v4"
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -42,47 +41,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const wasInitialized = typeof window !== "undefined" && localStorage.getItem(INIT_KEY)
 
+        // Get stored user first for immediate display
+        const storedUser = sessionStore.get()
+        if (storedUser && storedUser.id && storedUser.isActive) {
+          setUser(storedUser)
+        }
+        setIsLoading(false)
+
+        // Initialize default data in background (only once)
         if (!isInitialized && !wasInitialized) {
           isInitialized = true
-          // Run initialization in background without blocking
-          initializeDefaultData()
-            .then(() => {
+          // Delay to not block initial load
+          setTimeout(async () => {
+            try {
+              await initializeDefaultData()
               if (typeof window !== "undefined") {
                 localStorage.setItem(INIT_KEY, Date.now().toString())
               }
-            })
-            .catch(() => {})
+            } catch (e) {
+              // Ignore init errors
+            }
+          }, 3000)
         }
 
-        const storedUser = sessionStore.get()
-        if (storedUser) {
-          if (!storedUser.id) {
-            sessionStore.clear()
-            setUser(null)
-            setIsLoading(false)
-            return
-          }
-
+        // Refresh user data in background
+        if (storedUser && storedUser.id) {
           try {
             const freshUser = await userStore.getById(storedUser.id)
             if (freshUser && freshUser.isActive) {
               setUser(freshUser)
               sessionStore.set(freshUser)
-            } else {
-              if (storedUser.isActive) {
-                setUser(storedUser)
-              } else {
-                sessionStore.clear()
-                setUser(null)
-              }
             }
-          } catch (error) {
-            if (storedUser.isActive) {
-              setUser(storedUser)
-            } else {
-              sessionStore.clear()
-              setUser(null)
-            }
+          } catch {
+            // Keep using stored user on error
           }
         }
       } catch (error) {
@@ -93,8 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           sessionStore.clear()
           setUser(null)
         }
+        setIsLoading(false)
       }
-      setIsLoading(false)
     }
     initAuth()
   }, [])
@@ -104,13 +95,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const usernameLC = username.toLowerCase()
       let foundUser = await userStore.getByUsername(usernameLC)
 
+      // If admin not found, try to initialize default data
       if (!foundUser && usernameLC === "admin") {
         try {
           await initializeDefaultData()
           foundUser = await userStore.getByUsername(usernameLC)
-        } catch {
-          // Ignore init errors
-        }
+        } catch {}
       }
 
       if (!foundUser) {
@@ -132,17 +122,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: true, requirePasswordChange: true }
       }
 
-      if (foundUser.passwordLastChanged) {
-        const lastChanged = new Date(foundUser.passwordLastChanged)
-        const now = new Date()
-        const diffDays = Math.floor((now.getTime() - lastChanged.getTime()) / (1000 * 60 * 60 * 24))
-        if (diffDays >= 30) {
-          return { success: true, requirePasswordChange: true }
-        }
-      }
-
       return { success: true }
     } catch (error) {
+      console.error("[v0] Login error:", error)
       return { success: false, error: "Terjadi kesalahan saat login" }
     }
   }
@@ -159,88 +141,91 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }) => {
     try {
       const username = generateUsername(data.namaLengkap)
-      const userRole: UserRole = data.role || "sales"
+      const role = data.role || "sales"
 
       const newUser = await userStore.add({
         username,
         password: data.password,
         namaLengkap: data.namaLengkap.toUpperCase(),
-        role: userRole,
-        noHp: data.noHp,
-        merk: data.merk,
+        nomorHp: data.noHp,
+        role,
+        merk: data.merk ? [data.merk] : [],
         dealer: data.dealer,
-        isFirstLogin: false,
-        passwordLastChanged: new Date().toISOString(),
+        jabatan: role === "spv" ? "SPV" : undefined,
         isActive: true,
-        spvId: data.spvId || undefined,
-        spvName: data.spvName || undefined,
+        isFirstLogin: false,
+        spvId: data.spvId || "",
+        spvName: data.spvName || "",
       })
 
-      setUser(newUser)
-      sessionStore.set(newUser)
-
-      return { success: true, username }
+      return { success: true, username: newUser.username }
     } catch (error) {
-      return { success: false, error: "Terjadi kesalahan saat registrasi" }
+      console.error("[v0] Register error:", error)
+      return { success: false, error: "Gagal mendaftar" }
     }
   }
 
   const logout = () => {
-    setUser(null)
     sessionStore.clear()
+    setUser(null)
   }
 
   const changePassword = async (newPassword: string) => {
     if (!user) {
-      return { success: false, error: "Tidak ada user yang login" }
+      return { success: false, error: "User tidak ditemukan" }
     }
 
     try {
-      const updates = {
+      await userStore.update(user.id, {
         password: newPassword,
         isFirstLogin: false,
         passwordLastChanged: new Date().toISOString(),
-      }
+      })
 
-      await userStore.update(user.id, updates)
-      const updatedUser = { ...user, ...updates }
+      const updatedUser = { ...user, password: newPassword, isFirstLogin: false }
       setUser(updatedUser)
       sessionStore.set(updatedUser)
 
       return { success: true }
     } catch (error) {
-      return { success: false, error: "Terjadi kesalahan saat mengubah password" }
+      console.error("[v0] Change password error:", error)
+      return { success: false, error: "Gagal mengubah password" }
     }
   }
 
-  const updateUser = async (updates: Partial<User>) => {
+  const updateUser = (updates: Partial<User>) => {
     if (!user) return
-    try {
-      await userStore.update(user.id, updates)
-      const updatedUser = { ...user, ...updates }
-      setUser(updatedUser)
-      sessionStore.set(updatedUser)
-    } catch (error) {
-      // Silent failure
-    }
+    const updatedUser = { ...user, ...updates }
+    setUser(updatedUser)
+    sessionStore.set(updatedUser)
   }
 
   const refreshUser = async () => {
-    if (user) {
-      try {
-        const freshUser = await userStore.getById(user.id)
-        if (freshUser) {
-          setUser(freshUser)
-          sessionStore.set(freshUser)
-        }
-      } catch (error) {
-        // Silent failure - keep current user
+    if (!user?.id) return
+    try {
+      const freshUser = await userStore.getById(user.id)
+      if (freshUser) {
+        setUser(freshUser)
+        sessionStore.set(freshUser)
       }
+    } catch {
+      // Keep existing user on error
     }
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout, changePassword, updateUser, refreshUser }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isLoading,
+        login,
+        register,
+        logout,
+        changePassword,
+        updateUser,
+        refreshUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )
