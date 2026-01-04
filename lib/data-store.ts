@@ -513,6 +513,33 @@ export const notificationStore = {
 
 // Note Store - Uses Neon
 export const noteStore = {
+  getAll: async (): Promise<OrderNote[]> => {
+    try {
+      // Get all orders which includes notes
+      const orders = await getOrders()
+      const allNotes: OrderNote[] = []
+      orders.forEach((order: any) => {
+        if (order.notes && Array.isArray(order.notes)) {
+          order.notes.forEach((n: any) => {
+            allNotes.push({
+              id: n.id,
+              orderId: order.id,
+              userId: n.userId,
+              userName: n.userName,
+              role: n.role,
+              note: n.note,
+              status: n.status,
+              createdAt: n.createdAt,
+            })
+          })
+        }
+      })
+      return allNotes
+    } catch (error) {
+      console.error("Error getting all notes:", error)
+      return []
+    }
+  },
   getByOrderId: async (orderId: string): Promise<OrderNote[]> => {
     try {
       const notes = await dbGetOrderNotesByOrderId(orderId)

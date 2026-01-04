@@ -22,10 +22,29 @@ export interface Notification {
   createdByName?: string
 }
 
+let notificationsCache: { data: Notification[]; timestamp: number } | null = null
+const CACHE_TTL = 30000 // 30 seconds
+
+async function getCachedNotifications(): Promise<Notification[]> {
+  const now = Date.now()
+  if (notificationsCache && now - notificationsCache.timestamp < CACHE_TTL) {
+    return notificationsCache.data
+  }
+
+  try {
+    const allNotifications = await getFirebaseNotifications()
+    notificationsCache = { data: allNotifications, timestamp: now }
+    return allNotifications
+  } catch (error) {
+    console.error("[Notification] Error getting cached notifications:", error)
+    return notificationsCache?.data || []
+  }
+}
+
 // Get notifications for a user
 export async function getNotifications(userId: string): Promise<Notification[]> {
   try {
-    const allNotifications = await getFirebaseNotifications()
+    const allNotifications = await getCachedNotifications()
     return allNotifications
       .filter((n) => n.userId === userId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -36,36 +55,34 @@ export async function getNotifications(userId: string): Promise<Notification[]> 
   }
 }
 
-// Get unread notification count
 export async function getUnreadNotificationCount(userId: string): Promise<number> {
   try {
-    const notifications = await getNotifications(userId)
-    return notifications.filter((n) => !n.isRead).length
+    const allNotifications = await getCachedNotifications()
+    return allNotifications.filter((n) => n.userId === userId && !n.isRead).length
   } catch (error) {
     console.error("[Notification] Error getting unread count:", error)
     return 0
   }
 }
 
-// Mark notification as read
 export async function markNotificationAsRead(notificationId: string): Promise<void> {
   try {
     await markFirebaseNotificationAsRead(notificationId)
+    notificationsCache = null // Invalidate cache
   } catch (error) {
     console.error("[Notification] Error marking as read:", error)
   }
 }
 
-// Mark all notifications as read for a user
 export async function markAllNotificationsAsRead(userId: string): Promise<void> {
   try {
     await markFirebaseAllNotificationsAsRead(userId)
+    notificationsCache = null // Invalidate cache
   } catch (error) {
     console.error("[Notification] Error marking all as read:", error)
   }
 }
 
-// Create a notification
 export async function createNotification(
   notification: Omit<Notification, "id" | "createdAt" | "isRead">,
 ): Promise<void> {
@@ -74,6 +91,7 @@ export async function createNotification(
       ...notification,
       isRead: false,
     })
+    notificationsCache = null // Invalidate cache
   } catch (error) {
     console.error("[Notification] Error creating notification:", error)
   }

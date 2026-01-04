@@ -1,37 +1,44 @@
 "use client"
 
-import type React from "react"
-
-import type { Order, User, OrderStatus, OrderChecklist, OrderNote } from "@/lib/types"
-import { useState, useEffect, useRef, useMemo } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect, useMemo, useCallback } from "react"
+import { useRouter } from "next/navigation"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { orderStore, noteStore } from "@/lib/data-store"
-import { formatRupiah, generateId } from "@/lib/utils"
+import { orderStore, notificationStore } from "@/lib/data-store"
+import type { Order, OrderStatus, User } from "@/lib/types"
+import { formatRupiah } from "@/lib/utils"
 import {
-  Eye,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Upload,
+  Search,
   Filter,
+  Eye,
+  Calendar,
+  FileText,
+  CheckCircle,
+  Clock,
+  Circle,
   ChevronLeft,
   ChevronRight,
   Download,
+  MessageSquare,
 } from "lucide-react"
-import { OrderTimeline } from "@/components/order-timeline"
-import { notifySlikOrDecision } from "@/app/actions/notification-actions"
-import Image from "next/image"
 
-const STATUS_LIST: OrderStatus[] = [
+const ITEMS_PER_PAGE = 5
+
+const STATUS_ORDER: OrderStatus[] = [
   "Baru",
   "Claim",
   "Cek Slik",
@@ -42,56 +49,50 @@ const STATUS_LIST: OrderStatus[] = [
   "Reject",
 ]
 
-export default function TrackingPage() {
+const STATUS_COLORS: Record<OrderStatus, string> = {
+  Baru: "bg-blue-100 text-blue-800",
+  Claim: "bg-orange-100 text-orange-800",
+  "Cek Slik": "bg-yellow-100 text-yellow-800",
+  Proses: "bg-purple-100 text-purple-800",
+  Pertimbangkan: "bg-amber-100 text-amber-800",
+  "Map In": "bg-indigo-100 text-indigo-800",
+  Approve: "bg-green-100 text-green-800",
+  Reject: "bg-red-100 text-red-800",
+}
+
+export default function TrackingOrderPage() {
+  const router = useRouter()
   const { toast } = useToast()
   const [user, setUser] = useState<User | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all")
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
-  const [showDetailDialog, setShowDetailDialog] = useState(false)
-  const [showProcessDialog, setShowProcessDialog] = useState(false)
-  const [showSurveyDialog, setShowSurveyDialog] = useState(false)
-  const [showCmhDialog, setShowCmhDialog] = useState(false)
-  const [showBandingDialog, setShowBandingDialog] = useState(false)
-  const [showMapInDecisionDialog, setShowMapInDecisionDialog] = useState(false)
-  const [showPertimbanganDialog, setShowPertimbanganDialog] = useState(false)
-  const [pertimbanganNote, setPertimbanganNote] = useState("")
-  const [mapInDecisionNote, setMapInDecisionNote] = useState("")
-  const [bandingNote, setBandingNote] = useState("")
-  const [cmhNote, setCmhNote] = useState("")
-  const [hasilSlik, setHasilSlik] = useState("")
-  const [slikNote, setSlikNote] = useState("")
-  const [tanggalSurvey, setTanggalSurvey] = useState("")
-  const [checklist, setChecklist] = useState<OrderChecklist>({
-    ktpPemohon: false,
-    ktpPasangan: false,
-    kartuKeluarga: false,
-    npwp: false,
-    bkr: false,
-    livin: false,
-    rekTabungan: false,
-    mufApp: false,
-  })
-  const [fotoSurvey, setFotoSurvey] = useState<string[]>([])
-  const [isUploadingFoto, setIsUploadingFoto] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const [currentPage, setCurrentPage] = useState(1)
-  const ITEMS_PER_PAGE = 5
+
+  // Dialog states
+  const [showDetailDialog, setShowDetailDialog] = useState(false)
+  const [showSlikDialog, setShowSlikDialog] = useState(false)
+  const [showPertimbanganDialog, setShowPertimbanganDialog] = useState(false)
+  const [showNoteDialog, setShowNoteDialog] = useState(false)
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [slikResult, setSlikResult] = useState<string>("")
+  const [slikNote, setSlikNote] = useState("")
+  const [pertimbanganAction, setPertimbanganAction] = useState<"Approve" | "Reject">("Approve")
+  const [pertimbanganNote, setPertimbanganNote] = useState("")
+  const [noteText, setNoteText] = useState("")
+  const [processingAction, setProcessingAction] = useState(false)
 
   useEffect(() => {
-    loadOrders()
-  }, [user])
-
-  useEffect(() => {
-    const storedUser = localStorage.getItem("user")
+    const storedUser = localStorage.getItem("muf_current_user")
     if (storedUser) {
       setUser(JSON.parse(storedUser))
+    } else {
+      router.push("/login")
     }
-  }, [])
+  }, [router])
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     if (!user) return
     try {
       setLoading(true)
@@ -116,22 +117,21 @@ export default function TrackingPage() {
         ordersData = await orderStore.getAll()
       }
 
-      // Load notes for each order
-      const ordersWithNotes = await Promise.all(
-        ordersData.map(async (order) => {
-          const notes = await noteStore.getByOrderId(order.id)
-          return { ...order, notes: notes || [] }
-        }),
-      )
-
-      setOrders(ordersWithNotes)
+      // Orders already include notes from getOrders() in firebase-actions
+      setOrders(ordersData)
     } catch (error) {
       console.error("Error loading orders:", error)
       toast({ title: "Error", description: "Gagal memuat data order", variant: "destructive" })
     } finally {
       setLoading(false)
     }
-  }
+  }, [user, toast])
+
+  useEffect(() => {
+    if (user) {
+      loadOrders()
+    }
+  }, [user, loadOrders])
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -151,10 +151,9 @@ export default function TrackingPage() {
     return filteredOrders.slice(start, start + ITEMS_PER_PAGE)
   }, [filteredOrders, currentPage])
 
-  // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, statusFilter])
+  }, [statusFilter, searchQuery])
 
   const statusCounts = useMemo(() => {
     const counts: Record<OrderStatus, number> = {
@@ -167,269 +166,17 @@ export default function TrackingPage() {
       Approve: 0,
       Reject: 0,
     }
-    orders.forEach((o) => {
-      if (counts[o.status] !== undefined) counts[o.status]++
+    orders.forEach((order) => {
+      if (counts[order.status] !== undefined) {
+        counts[order.status]++
+      }
     })
     return counts
   }, [orders])
 
-  const addNote = async (order: Order, note: string, newStatus: OrderStatus) => {
-    if (!user) return
-
-    const newNote: OrderNote = {
-      id: generateId(),
-      orderId: order.id,
-      userId: user.id,
-      userName: user.namaLengkap,
-      role: user.role,
-      note,
-      status: newStatus,
-      createdAt: new Date().toISOString(),
-    }
-
-    await noteStore.add(newNote)
-    await orderStore.update(order.id, {
-      status: newStatus,
-      updatedAt: new Date().toISOString(),
-    })
-
-    await loadOrders()
-  }
-
-  const handleClaim = async (order: Order) => {
-    if (!user) return
-    try {
-      await orderStore.update(order.id, {
-        claimedBy: user.id,
-        claimedAt: new Date().toISOString(),
-        status: "Claim",
-        updatedAt: new Date().toISOString(),
-      })
-      await addNote(order, `Order di-claim oleh ${user.namaLengkap}`, "Claim")
-      toast({ title: "Berhasil", description: "Order berhasil di-claim" })
-    } catch (error) {
-      console.error("Error claiming order:", error)
-      toast({ title: "Error", description: "Gagal meng-claim order", variant: "destructive" })
-    }
-  }
-
-  const handleProcess = (order: Order) => {
-    setSelectedOrder(order)
-    setHasilSlik("")
-    setSlikNote("")
-    setShowProcessDialog(true)
-  }
-
-  const handleSubmitSlik = async () => {
-    if (!selectedOrder || !hasilSlik) return
-    try {
-      const noteText = slikNote ? `Hasil SLIK: ${hasilSlik}. Catatan: ${slikNote}` : `Hasil SLIK: ${hasilSlik}`
-
-      await orderStore.update(selectedOrder.id, {
-        hasilSlik,
-        status: "Cek Slik",
-        updatedAt: new Date().toISOString(),
-      })
-      await addNote(selectedOrder, noteText, "Cek Slik")
-
-      try {
-        await notifySlikOrDecision({
-          orderId: selectedOrder.id,
-          namaNasabah: selectedOrder.namaNasabah,
-          salesId: selectedOrder.salesId,
-          type: "slik",
-          result: hasilSlik,
-        })
-      } catch (notifError) {
-        console.error("Notification error:", notifError)
-      }
-
-      setShowProcessDialog(false)
-      toast({ title: "Berhasil", description: "Hasil SLIK berhasil disimpan" })
-    } catch (error) {
-      console.error("Error submitting SLIK:", error)
-      toast({ title: "Error", description: "Gagal menyimpan hasil SLIK", variant: "destructive" })
-    }
-  }
-
-  const handleSurvey = (order: Order) => {
-    setSelectedOrder(order)
-    setTanggalSurvey("")
-    setChecklist({
-      ktpPemohon: order.checklist?.ktpPemohon || false,
-      ktpPasangan: order.checklist?.ktpPasangan || false,
-      kartuKeluarga: order.checklist?.kartuKeluarga || false,
-      npwp: order.checklist?.npwp || false,
-      bkr: order.checklist?.bkr || false,
-      livin: order.checklist?.livin || false,
-      rekTabungan: order.checklist?.rekTabungan || false,
-      mufApp: order.checklist?.mufApp || false,
-    })
-    setFotoSurvey(order.fotoSurvey || [])
-    setShowSurveyDialog(true)
-  }
-
-  const handleFotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-
-    setIsUploadingFoto(true)
-    try {
-      const newPhotos: string[] = []
-      for (const file of Array.from(files)) {
-        const reader = new FileReader()
-        const base64 = await new Promise<string>((resolve) => {
-          reader.onloadend = () => resolve(reader.result as string)
-          reader.readAsDataURL(file)
-        })
-        newPhotos.push(base64)
-      }
-      setFotoSurvey((prev) => [...prev, ...newPhotos])
-    } catch (error) {
-      console.error("Error uploading photos:", error)
-      toast({ title: "Error", description: "Gagal upload foto", variant: "destructive" })
-    } finally {
-      setIsUploadingFoto(false)
-    }
-  }
-
-  const handleSubmitSurvey = async () => {
-    if (!selectedOrder || !tanggalSurvey) return
-    try {
-      await orderStore.update(selectedOrder.id, {
-        tanggalSurvey,
-        checklist,
-        fotoSurvey,
-        status: "Proses",
-        updatedAt: new Date().toISOString(),
-      })
-      await addNote(selectedOrder, `Survey selesai pada ${tanggalSurvey}`, "Proses")
-      setShowSurveyDialog(false)
-      toast({ title: "Berhasil", description: "Data survey berhasil disimpan" })
-    } catch (error) {
-      console.error("Error submitting survey:", error)
-      toast({ title: "Error", description: "Gagal menyimpan data survey", variant: "destructive" })
-    }
-  }
-
-  const handleCmhDecision = (order: Order) => {
-    setSelectedOrder(order)
-    setCmhNote("")
-    setShowCmhDialog(true)
-  }
-
-  const handleSubmitCmhDecision = async (decision: "Approve" | "Reject" | "Pertimbangkan") => {
-    if (!selectedOrder) return
-    try {
-      const newStatus = decision
-      await orderStore.update(selectedOrder.id, {
-        status: newStatus,
-        updatedAt: new Date().toISOString(),
-      })
-      const noteText = cmhNote ? `Keputusan CMH: ${decision}. Catatan: ${cmhNote}` : `Keputusan CMH: ${decision}`
-      await addNote(selectedOrder, noteText, newStatus)
-
-      try {
-        await notifySlikOrDecision({
-          orderId: selectedOrder.id,
-          namaNasabah: selectedOrder.namaNasabah,
-          salesId: selectedOrder.salesId,
-          type: "decision",
-          result: decision,
-        })
-      } catch (notifError) {
-        console.error("Notification error:", notifError)
-      }
-
-      setShowCmhDialog(false)
-      toast({ title: "Berhasil", description: `Order berhasil di-${decision.toLowerCase()}` })
-    } catch (error) {
-      console.error("Error submitting CMH decision:", error)
-      toast({ title: "Error", description: "Gagal menyimpan keputusan", variant: "destructive" })
-    }
-  }
-
-  const handlePertimbanganAction = (order: Order) => {
-    setSelectedOrder(order)
-    setPertimbanganNote("")
-    setShowPertimbanganDialog(true)
-  }
-
-  const handleSubmitPertimbanganDecision = async (decision: "Approve" | "Reject") => {
-    if (!selectedOrder) return
-    try {
-      await orderStore.update(selectedOrder.id, {
-        status: decision,
-        updatedAt: new Date().toISOString(),
-      })
-      const noteText = pertimbanganNote
-        ? `Keputusan Pertimbangan CMH: ${decision}. Catatan: ${pertimbanganNote}`
-        : `Keputusan Pertimbangan CMH: ${decision}`
-      await addNote(selectedOrder, noteText, decision)
-
-      try {
-        await notifySlikOrDecision({
-          orderId: selectedOrder.id,
-          namaNasabah: selectedOrder.namaNasabah,
-          salesId: selectedOrder.salesId,
-          type: "decision",
-          result: decision,
-        })
-      } catch (notifError) {
-        console.error("Notification error:", notifError)
-      }
-
-      setShowPertimbanganDialog(false)
-      toast({ title: "Berhasil", description: `Order berhasil di-${decision.toLowerCase()}` })
-    } catch (error) {
-      console.error("Error submitting pertimbangan decision:", error)
-      toast({ title: "Error", description: "Gagal menyimpan keputusan", variant: "destructive" })
-    }
-  }
-
-  const handleMapInDecision = (order: Order) => {
-    setSelectedOrder(order)
-    setMapInDecisionNote("")
-    setShowMapInDecisionDialog(true)
-  }
-
-  const handleSubmitMapIn = async () => {
-    if (!selectedOrder) return
-    try {
-      await orderStore.update(selectedOrder.id, {
-        status: "Map In",
-        updatedAt: new Date().toISOString(),
-      })
-      const noteText = mapInDecisionNote ? `Order masuk Map In. Catatan: ${mapInDecisionNote}` : `Order masuk Map In`
-      await addNote(selectedOrder, noteText, "Map In")
-      setShowMapInDecisionDialog(false)
-      toast({ title: "Berhasil", description: "Order berhasil masuk Map In" })
-    } catch (error) {
-      console.error("Error submitting Map In:", error)
-      toast({ title: "Error", description: "Gagal update status", variant: "destructive" })
-    }
-  }
-
-  const handleBanding = (order: Order) => {
-    setSelectedOrder(order)
-    setBandingNote("")
-    setShowBandingDialog(true)
-  }
-
-  const handleSubmitBanding = async () => {
-    if (!selectedOrder || !bandingNote) return
-    try {
-      await orderStore.update(selectedOrder.id, {
-        status: "Pertimbangkan",
-        updatedAt: new Date().toISOString(),
-      })
-      await addNote(selectedOrder, `Banding diajukan: ${bandingNote}`, "Pertimbangkan")
-      setShowBandingDialog(false)
-      toast({ title: "Berhasil", description: "Banding berhasil diajukan" })
-    } catch (error) {
-      console.error("Error submitting banding:", error)
-      toast({ title: "Error", description: "Gagal mengajukan banding", variant: "destructive" })
-    }
+  const handleStatusCardClick = (status: OrderStatus | "all") => {
+    setStatusFilter(status)
+    setCurrentPage(1)
   }
 
   const handleViewDetail = (order: Order) => {
@@ -437,155 +184,273 @@ export default function TrackingPage() {
     setShowDetailDialog(true)
   }
 
-  const getStatusBadge = (status: OrderStatus) => {
-    const variants: Record<OrderStatus, "default" | "secondary" | "destructive" | "outline"> = {
-      Baru: "default",
-      Claim: "secondary",
-      "Cek Slik": "outline",
-      Proses: "secondary",
-      Pertimbangkan: "outline",
-      "Map In": "secondary",
-      Approve: "default",
-      Reject: "destructive",
-    }
-    const colors: Record<OrderStatus, string> = {
-      Baru: "bg-blue-100 text-blue-800",
-      Claim: "bg-orange-100 text-orange-800",
-      "Cek Slik": "bg-yellow-100 text-yellow-800",
-      Proses: "bg-purple-100 text-purple-800",
-      Pertimbangkan: "bg-amber-100 text-amber-800",
-      "Map In": "bg-indigo-100 text-indigo-800",
-      Approve: "bg-green-100 text-green-800",
-      Reject: "bg-red-100 text-red-800",
-    }
-    return <Badge className={colors[status]}>{status}</Badge>
-  }
+  const handleStatusChange = async (order: Order, newStatus: OrderStatus, note?: string) => {
+    try {
+      setProcessingAction(true)
 
-  const getPassedStatuses = (currentStatus: OrderStatus): OrderStatus[] => {
-    const order: OrderStatus[] = ["Baru", "Claim", "Cek Slik", "Proses", "Map In", "Approve"]
-    const idx = order.indexOf(currentStatus)
-    if (idx === -1) {
-      if (currentStatus === "Reject") return ["Baru", "Claim"]
-      if (currentStatus === "Pertimbangkan") return ["Baru", "Claim", "Cek Slik", "Proses"]
-      return []
-    }
-    return order.slice(0, idx + 1)
-  }
+      const updates: Partial<Order> = { status: newStatus }
 
-  const getStatusTimestamps = (notes: OrderNote[] = []) => {
-    const timestamps: Record<string, string> = {}
-    notes.forEach((note) => {
-      if (!timestamps[note.status]) {
-        timestamps[note.status] = note.createdAt
+      if (newStatus === "Claim" && user) {
+        updates.claimedBy = user.id
+        updates.claimedAt = new Date().toISOString()
       }
-    })
-    return timestamps
+
+      await orderStore.update(order.id, updates)
+
+      // Add note if provided
+      if (note && user) {
+        await orderStore.addNote(order.id, {
+          id: crypto.randomUUID(),
+          orderId: order.id,
+          userId: user.id,
+          userName: user.namaLengkap,
+          role: user.role,
+          note: note,
+          status: newStatus,
+          createdAt: new Date().toISOString(),
+        })
+      }
+
+      // Create notification
+      if (order.salesId) {
+        await notificationStore.add({
+          userId: order.salesId,
+          title: `Status Order Diperbarui`,
+          message: `Order ${order.namaNasabah} telah diperbarui ke status ${newStatus}`,
+          type: "order_update",
+          relatedOrderId: order.id,
+        })
+      }
+
+      toast({ title: "Berhasil", description: `Status order diperbarui ke ${newStatus}` })
+      await loadOrders()
+    } catch (error) {
+      console.error("Error updating status:", error)
+      toast({ title: "Error", description: "Gagal memperbarui status", variant: "destructive" })
+    } finally {
+      setProcessingAction(false)
+    }
   }
 
-  const canTakeAction = (order: Order) => {
-    if (!user) return false
-    if (user.role === "admin") return true
-    if (user.role === "cmo") {
-      return (
-        ["Baru", "Claim", "Cek Slik", "Proses"].includes(order.status) &&
-        (order.claimedBy === user.id || order.status === "Baru" || order.cmoId === user.id)
-      )
+  const handleSlikSubmit = async () => {
+    if (!selectedOrder || !slikResult) return
+
+    try {
+      setProcessingAction(true)
+
+      let newStatus: OrderStatus = "Proses"
+      if (slikResult === "Tolak") {
+        newStatus = "Reject"
+      } else if (slikResult === "Ada Catatan") {
+        newStatus = "Pertimbangkan"
+      }
+
+      await orderStore.update(selectedOrder.id, {
+        status: newStatus,
+        hasilSlik: slikResult,
+      })
+
+      // Add note with SLIK result
+      if (user) {
+        const noteMessage = slikNote ? `Hasil SLIK: ${slikResult}. Catatan: ${slikNote}` : `Hasil SLIK: ${slikResult}`
+
+        await orderStore.addNote(selectedOrder.id, {
+          id: crypto.randomUUID(),
+          orderId: selectedOrder.id,
+          userId: user.id,
+          userName: user.namaLengkap,
+          role: user.role,
+          note: noteMessage,
+          status: newStatus,
+          createdAt: new Date().toISOString(),
+        })
+      }
+
+      toast({ title: "Berhasil", description: "Hasil SLIK berhasil disimpan" })
+      setShowSlikDialog(false)
+      setSlikResult("")
+      setSlikNote("")
+      await loadOrders()
+    } catch (error) {
+      console.error("Error submitting SLIK:", error)
+      toast({ title: "Error", description: "Gagal menyimpan hasil SLIK", variant: "destructive" })
+    } finally {
+      setProcessingAction(false)
     }
-    if (user.role === "cmh") {
-      return ["Map In", "Pertimbangkan"].includes(order.status)
-    }
-    if (user.role === "sales") {
-      return order.status === "Reject"
-    }
-    return false
   }
 
-  const renderActionButton = (order: Order) => {
-    if (!canTakeAction(order)) return null
+  const handlePertimbanganSubmit = async () => {
+    if (!selectedOrder) return
 
-    if (user?.role === "cmo" || user?.role === "admin") {
-      switch (order.status) {
-        case "Baru":
+    try {
+      setProcessingAction(true)
+
+      const newStatus: OrderStatus = pertimbanganAction
+
+      await orderStore.update(selectedOrder.id, { status: newStatus })
+
+      // Add note
+      if (user && pertimbanganNote) {
+        await orderStore.addNote(selectedOrder.id, {
+          id: crypto.randomUUID(),
+          orderId: selectedOrder.id,
+          userId: user.id,
+          userName: user.namaLengkap,
+          role: user.role,
+          note: `Keputusan ${pertimbanganAction}: ${pertimbanganNote}`,
+          status: newStatus,
+          createdAt: new Date().toISOString(),
+        })
+      }
+
+      toast({ title: "Berhasil", description: `Order telah di-${pertimbanganAction}` })
+      setShowPertimbanganDialog(false)
+      setPertimbanganNote("")
+      await loadOrders()
+    } catch (error) {
+      console.error("Error submitting pertimbangan:", error)
+      toast({ title: "Error", description: "Gagal menyimpan keputusan", variant: "destructive" })
+    } finally {
+      setProcessingAction(false)
+    }
+  }
+
+  const handleAddNote = async () => {
+    if (!selectedOrder || !noteText || !user) return
+
+    try {
+      setProcessingAction(true)
+
+      await orderStore.addNote(selectedOrder.id, {
+        id: crypto.randomUUID(),
+        orderId: selectedOrder.id,
+        userId: user.id,
+        userName: user.namaLengkap,
+        role: user.role,
+        note: noteText,
+        status: selectedOrder.status,
+        createdAt: new Date().toISOString(),
+      })
+
+      toast({ title: "Berhasil", description: "Catatan berhasil ditambahkan" })
+      setShowNoteDialog(false)
+      setNoteText("")
+      await loadOrders()
+    } catch (error) {
+      console.error("Error adding note:", error)
+      toast({ title: "Error", description: "Gagal menambahkan catatan", variant: "destructive" })
+    } finally {
+      setProcessingAction(false)
+    }
+  }
+
+  const getActionButton = (order: Order) => {
+    if (!user) return null
+
+    const isCmo = user.role === "cmo"
+    const isCmh = user.role === "cmh"
+
+    switch (order.status) {
+      case "Baru":
+        if (isCmo) {
           return (
-            <Button size="sm" onClick={() => handleClaim(order)}>
+            <Button size="sm" onClick={() => handleStatusChange(order, "Claim")} disabled={processingAction}>
               Claim
             </Button>
           )
-        case "Claim":
+        }
+        break
+      case "Claim":
+        if (isCmo) {
           return (
-            <Button size="sm" onClick={() => handleProcess(order)}>
+            <Button
+              size="sm"
+              onClick={() => {
+                setSelectedOrder(order)
+                setShowSlikDialog(true)
+              }}
+              disabled={processingAction}
+            >
               Cek SLIK
             </Button>
           )
-        case "Cek Slik":
+        }
+        break
+      case "Cek Slik":
+        if (isCmo) {
           return (
-            <Button size="sm" onClick={() => handleSurvey(order)}>
+            <Button size="sm" onClick={() => handleStatusChange(order, "Proses")} disabled={processingAction}>
               Survey
             </Button>
           )
-        case "Proses":
+        }
+        break
+      case "Pertimbangkan":
+        if (isCmh) {
           return (
-            <Button size="sm" onClick={() => handleMapInDecision(order)}>
-              Map In
+            <Button
+              size="sm"
+              onClick={() => {
+                setSelectedOrder(order)
+                setShowPertimbanganDialog(true)
+              }}
+              disabled={processingAction}
+            >
+              Keputusan
             </Button>
           )
-      }
-    }
-
-    if (user?.role === "cmh") {
-      if (order.status === "Map In") {
-        return (
-          <Button size="sm" onClick={() => handleCmhDecision(order)}>
-            Keputusan
-          </Button>
-        )
-      }
-      if (order.status === "Pertimbangkan") {
-        return (
-          <Button size="sm" onClick={() => handlePertimbanganAction(order)}>
-            Tindak Lanjut
-          </Button>
-        )
-      }
-    }
-
-    if (user?.role === "sales" && order.status === "Reject") {
-      return (
-        <Button size="sm" variant="outline" onClick={() => handleBanding(order)}>
-          Banding
-        </Button>
-      )
+        }
+        break
+      default:
+        break
     }
 
     return null
   }
 
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  }
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="container mx-auto p-4 space-y-6">
+      <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold">Tracking Order</h1>
         <p className="text-muted-foreground">Kelola dan proses semua order</p>
       </div>
 
-      {/* Status Summary */}
       <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
-        {STATUS_LIST.map((status) => (
+        {STATUS_ORDER.map((status) => (
           <Card
             key={status}
-            className={`cursor-pointer transition-all ${statusFilter === status ? "ring-2 ring-primary" : ""}`}
-            onClick={() => setStatusFilter(statusFilter === status ? "all" : status)}
+            className={`cursor-pointer transition-all hover:shadow-md ${
+              statusFilter === status ? "ring-2 ring-primary bg-primary text-primary-foreground" : ""
+            }`}
+            onClick={() => handleStatusCardClick(status)}
           >
             <CardContent className="p-3 text-center">
-              <p className="text-2xl font-bold">{statusCounts[status]}</p>
-              <p className="text-xs text-muted-foreground truncate">{status}</p>
+              <p className={`text-2xl font-bold ${statusFilter === status ? "text-primary-foreground" : ""}`}>
+                {statusCounts[status]}
+              </p>
+              <p
+                className={`text-xs truncate ${statusFilter === status ? "text-primary-foreground/80" : "text-muted-foreground"}`}
+              >
+                {status}
+              </p>
             </CardContent>
           </Card>
         ))}
@@ -595,27 +460,31 @@ export default function TrackingPage() {
       <Card>
         <CardContent className="p-4">
           <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Cari nasabah, sales, unit..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
               />
             </div>
-            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as OrderStatus | "all")}>
-              <SelectTrigger className="w-full md:w-[180px]">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Filter Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Status</SelectItem>
-                {STATUS_LIST.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {status}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as OrderStatus | "all")}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Semua Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  {STATUS_ORDER.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -630,11 +499,15 @@ export default function TrackingPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {filteredOrders.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">Tidak ada order ditemukan</div>
+          {paginatedOrders.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>Tidak ada order ditemukan</p>
+            </div>
           ) : (
-            <>
-              <div className="overflow-x-auto">
+            <div className="space-y-4">
+              {/* Desktop Table */}
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
@@ -659,22 +532,16 @@ export default function TrackingPage() {
                         </td>
                         <td className="p-2">{order.salesName}</td>
                         <td className="p-2">{order.cmoName || "-"}</td>
-                        <td className="p-2">{getStatusBadge(order.status)}</td>
-                        <td className="p-2 text-sm">
-                          {new Date(order.createdAt).toLocaleDateString("id-ID", {
-                            day: "numeric",
-                            month: "long",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </td>
                         <td className="p-2">
-                          <div className="flex gap-2">
-                            <Button size="icon" variant="ghost" onClick={() => handleViewDetail(order)}>
+                          <Badge className={STATUS_COLORS[order.status]}>{order.status}</Badge>
+                        </td>
+                        <td className="p-2 text-sm">{formatDate(order.createdAt)}</td>
+                        <td className="p-2">
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" variant="ghost" onClick={() => handleViewDetail(order)}>
                               <Eye className="h-4 w-4" />
                             </Button>
-                            {renderActionButton(order)}
+                            {getActionButton(order)}
                           </div>
                         </td>
                       </tr>
@@ -683,40 +550,71 @@ export default function TrackingPage() {
                 </table>
               </div>
 
+              {/* Mobile Cards */}
+              <div className="md:hidden space-y-3">
+                {paginatedOrders.map((order) => (
+                  <Card key={order.id}>
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-medium">{order.namaNasabah}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {order.merk} - {order.typeUnit}
+                          </p>
+                        </div>
+                        <Badge className={STATUS_COLORS[order.status]}>{order.status}</Badge>
+                      </div>
+                      <div className="text-sm text-muted-foreground mb-3">
+                        <p>Sales: {order.salesName}</p>
+                        <p>CMO: {order.cmoName || "-"}</p>
+                        <p className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {formatDate(order.createdAt)}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => handleViewDetail(order)}>
+                          <Eye className="h-4 w-4 mr-1" /> Detail
+                        </Button>
+                        {getActionButton(order)}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4">
-                  <p className="text-sm text-muted-foreground">
+                <div className="flex justify-center items-center gap-2 pt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Sebelumnya
+                  </Button>
+                  <span className="text-sm">
                     Halaman {currentPage} dari {totalPages}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Sebelumnya
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages}
-                    >
-                      Selanjutnya
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                  >
+                    Selanjutnya
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
                 </div>
               )}
-            </>
+            </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Detail Dialog */}
+      {/* Detail Order Dialog */}
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -758,177 +656,165 @@ export default function TrackingPage() {
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Status</Label>
-                  <div className="mt-1">{getStatusBadge(selectedOrder.status)}</div>
+                  <Badge className={STATUS_COLORS[selectedOrder.status]}>{selectedOrder.status}</Badge>
                 </div>
               </div>
 
-              {selectedOrder.hasilSlik && (
-                <div>
-                  <Label className="text-muted-foreground">Hasil SLIK</Label>
-                  <p className="font-medium">{selectedOrder.hasilSlik}</p>
-                </div>
-              )}
+              {/* Status Timeline */}
+              <div className="pt-4 border-t">
+                <Label className="text-muted-foreground mb-2 block">Progress Status</Label>
+                <div className="flex items-center justify-between overflow-x-auto pb-2">
+                  {STATUS_ORDER.slice(0, 7).map((status, index) => {
+                    const currentIndex = STATUS_ORDER.indexOf(selectedOrder.status)
+                    const statusIndex = index
+                    const isCompleted = statusIndex < currentIndex
+                    const isCurrent = status === selectedOrder.status
 
-              {selectedOrder.tanggalSurvey && (
-                <div>
-                  <Label className="text-muted-foreground">Tanggal Survey</Label>
-                  <p className="font-medium">{selectedOrder.tanggalSurvey}</p>
-                </div>
-              )}
-
-              {(user?.role === "cmo" || user?.role === "cmh" || user?.role === "admin") && (
-                <div className="border-t pt-4">
-                  <Label className="text-muted-foreground font-semibold">Dokumen Lampiran</Label>
-                  <div className="grid grid-cols-3 gap-4 mt-2">
-                    {selectedOrder.fotoKtpNasabah && (
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">KTP Nasabah</p>
-                        <a
-                          href={selectedOrder.fotoKtpNasabah}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block"
+                    return (
+                      <div key={status} className="flex flex-col items-center min-w-[60px]">
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                            isCompleted
+                              ? "bg-green-500 text-white"
+                              : isCurrent
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted text-muted-foreground"
+                          }`}
                         >
-                          <Image
-                            src={selectedOrder.fotoKtpNasabah || "/placeholder.svg"}
-                            alt="KTP Nasabah"
-                            width={120}
-                            height={80}
-                            className="rounded border object-cover hover:opacity-80 cursor-pointer"
-                          />
-                        </a>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full text-xs bg-transparent"
-                          onClick={() => window.open(selectedOrder.fotoKtpNasabah, "_blank")}
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          Download
-                        </Button>
-                      </div>
-                    )}
-                    {selectedOrder.fotoKtpPasangan && (
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">KTP Pasangan</p>
-                        <a
-                          href={selectedOrder.fotoKtpPasangan}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block"
-                        >
-                          <Image
-                            src={selectedOrder.fotoKtpPasangan || "/placeholder.svg"}
-                            alt="KTP Pasangan"
-                            width={120}
-                            height={80}
-                            className="rounded border object-cover hover:opacity-80 cursor-pointer"
-                          />
-                        </a>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full text-xs bg-transparent"
-                          onClick={() => window.open(selectedOrder.fotoKtpPasangan, "_blank")}
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          Download
-                        </Button>
-                      </div>
-                    )}
-                    {selectedOrder.fotoKk && (
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Kartu Keluarga</p>
-                        <a href={selectedOrder.fotoKk} target="_blank" rel="noopener noreferrer" className="block">
-                          <Image
-                            src={selectedOrder.fotoKk || "/placeholder.svg"}
-                            alt="Kartu Keluarga"
-                            width={120}
-                            height={80}
-                            className="rounded border object-cover hover:opacity-80 cursor-pointer"
-                          />
-                        </a>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full text-xs bg-transparent"
-                          onClick={() => window.open(selectedOrder.fotoKk, "_blank")}
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          Download
-                        </Button>
-                      </div>
-                    )}
-                    {selectedOrder.fotoSurvey && selectedOrder.fotoSurvey.length > 0 && (
-                      <div className="col-span-3 space-y-1">
-                        <p className="text-xs text-muted-foreground">Foto Survey</p>
-                        <div className="flex gap-2 flex-wrap">
-                          {selectedOrder.fotoSurvey.map((foto, idx) => (
-                            <div key={idx} className="space-y-1">
-                              <a href={foto} target="_blank" rel="noopener noreferrer" className="block">
-                                <Image
-                                  src={foto || "/placeholder.svg"}
-                                  alt={`Survey ${idx + 1}`}
-                                  width={80}
-                                  height={60}
-                                  className="rounded border object-cover hover:opacity-80 cursor-pointer"
-                                />
-                              </a>
-                            </div>
-                          ))}
+                          {isCompleted ? (
+                            <CheckCircle className="h-4 w-4" />
+                          ) : isCurrent ? (
+                            <Clock className="h-4 w-4" />
+                          ) : (
+                            <Circle className="h-4 w-4" />
+                          )}
                         </div>
+                        <span className="text-xs mt-1 text-center">{status}</span>
                       </div>
-                    )}
-                    {!selectedOrder.fotoKtpNasabah &&
-                      !selectedOrder.fotoKtpPasangan &&
-                      !selectedOrder.fotoKk &&
-                      (!selectedOrder.fotoSurvey || selectedOrder.fotoSurvey.length === 0) && (
-                        <p className="text-sm text-muted-foreground col-span-3">Tidak ada dokumen lampiran</p>
-                      )}
-                  </div>
+                    )
+                  })}
                 </div>
-              )}
+              </div>
 
-              {selectedOrder.notes && selectedOrder.notes.length > 0 && (
-                <div className="border-t pt-4">
-                  <Label className="text-muted-foreground font-semibold">Catatan / Notes</Label>
-                  <div className="space-y-2 mt-2 max-h-40 overflow-y-auto">
+              {/* Documents Section */}
+              <div className="pt-4 border-t">
+                <Label className="text-muted-foreground mb-2 block">Dokumen Lampiran</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {selectedOrder.fotoKtpNasabah && (
+                    <a
+                      href={selectedOrder.fotoKtpNasabah}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 p-2 border rounded hover:bg-muted"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span className="text-sm">KTP Nasabah</span>
+                    </a>
+                  )}
+                  {selectedOrder.fotoKtpPasangan && (
+                    <a
+                      href={selectedOrder.fotoKtpPasangan}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 p-2 border rounded hover:bg-muted"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span className="text-sm">KTP Pasangan</span>
+                    </a>
+                  )}
+                  {selectedOrder.fotoKk && (
+                    <a
+                      href={selectedOrder.fotoKk}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 p-2 border rounded hover:bg-muted"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span className="text-sm">Kartu Keluarga</span>
+                    </a>
+                  )}
+                  {selectedOrder.fotoSurvey &&
+                    selectedOrder.fotoSurvey.length > 0 &&
+                    selectedOrder.fotoSurvey.map((foto, idx) => (
+                      <a
+                        key={idx}
+                        href={foto}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 p-2 border rounded hover:bg-muted"
+                      >
+                        <Download className="h-4 w-4" />
+                        <span className="text-sm">Foto Survey {idx + 1}</span>
+                      </a>
+                    ))}
+                </div>
+                {!selectedOrder.fotoKtpNasabah &&
+                  !selectedOrder.fotoKtpPasangan &&
+                  !selectedOrder.fotoKk &&
+                  (!selectedOrder.fotoSurvey || selectedOrder.fotoSurvey.length === 0) && (
+                    <p className="text-sm text-muted-foreground">Tidak ada dokumen lampiran</p>
+                  )}
+              </div>
+
+              {/* Notes Section */}
+              <div className="pt-4 border-t">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-muted-foreground">Catatan</Label>
+                  {user && (user.role === "cmo" || user.role === "cmh") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setShowNoteDialog(true)
+                      }}
+                    >
+                      <MessageSquare className="h-4 w-4 mr-1" />
+                      Tambah Catatan
+                    </Button>
+                  )}
+                </div>
+                {selectedOrder.notes && selectedOrder.notes.length > 0 ? (
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
                     {selectedOrder.notes.map((note, idx) => (
-                      <div key={idx} className="bg-muted/50 p-2 rounded text-sm">
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span className="font-medium">
-                            {note.userName} ({note.role.toUpperCase()})
+                      <div key={idx} className="p-2 bg-muted rounded text-sm">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium">{note.userName}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {note.role}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(note.createdAt).toLocaleString("id-ID")}
                           </span>
-                          <span>{new Date(note.createdAt).toLocaleString("id-ID")}</span>
                         </div>
-                        <p className="mt-1">{note.note}</p>
+                        <p>{note.note}</p>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-
-              <OrderTimeline
-                currentStatus={selectedOrder.status}
-                passedStatuses={getPassedStatuses(selectedOrder.status)}
-                timestamps={getStatusTimestamps(selectedOrder.notes)}
-              />
+                ) : (
+                  <p className="text-sm text-muted-foreground">Belum ada catatan</p>
+                )}
+              </div>
             </div>
           )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDetailDialog(false)}>
+              Tutup
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Process Dialog (SLIK) - Add Note field */}
-      <Dialog open={showProcessDialog} onOpenChange={setShowProcessDialog}>
+      {/* SLIK Dialog */}
+      <Dialog open={showSlikDialog} onOpenChange={setShowSlikDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Input Hasil SLIK</DialogTitle>
             <DialogDescription>Masukkan hasil pengecekan SLIK</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
+            <div className="space-y-2">
               <Label>Hasil SLIK</Label>
-              <Select value={hasilSlik} onValueChange={setHasilSlik}>
+              <Select value={slikResult} onValueChange={setSlikResult}>
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih hasil SLIK" />
                 </SelectTrigger>
@@ -939,234 +825,94 @@ export default function TrackingPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
+            <div className="space-y-2">
               <Label>Catatan (Opsional)</Label>
               <Textarea
+                placeholder="Tambahkan catatan hasil SLIK..."
                 value={slikNote}
                 onChange={(e) => setSlikNote(e.target.value)}
-                placeholder="Tambahkan catatan hasil SLIK..."
               />
             </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowProcessDialog(false)}>
-                Batal
-              </Button>
-              <Button onClick={handleSubmitSlik} disabled={!hasilSlik}>
-                Simpan
-              </Button>
-            </div>
           </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSlikDialog(false)}>
+              Batal
+            </Button>
+            <Button onClick={handleSlikSubmit} disabled={!slikResult || processingAction}>
+              {processingAction ? "Menyimpan..." : "Simpan"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Survey Dialog */}
-      <Dialog open={showSurveyDialog} onOpenChange={setShowSurveyDialog}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Data Survey</DialogTitle>
-            <DialogDescription>Lengkapi data survey nasabah</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Tanggal Survey</Label>
-              <Input type="date" value={tanggalSurvey} onChange={(e) => setTanggalSurvey(e.target.value)} />
-            </div>
-
-            <div>
-              <Label>Checklist Dokumen</Label>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {Object.entries(checklist).map(([key, value]) => (
-                  <div key={key} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={key}
-                      checked={value}
-                      onCheckedChange={(checked) => setChecklist((prev) => ({ ...prev, [key]: checked === true }))}
-                    />
-                    <label htmlFor={key} className="text-sm capitalize">
-                      {key.replace(/([A-Z])/g, " $1").trim()}
-                    </label>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <Label>Foto Survey</Label>
-              <div className="mt-2">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFotoUpload}
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploadingFoto}
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  {isUploadingFoto ? "Uploading..." : "Upload Foto"}
-                </Button>
-              </div>
-              {fotoSurvey.length > 0 && (
-                <div className="flex gap-2 mt-2 flex-wrap">
-                  {fotoSurvey.map((foto, idx) => (
-                    <div key={idx} className="relative">
-                      <Image
-                        src={foto || "/placeholder.svg"}
-                        alt={`Survey ${idx + 1}`}
-                        width={80}
-                        height={80}
-                        className="rounded border object-cover"
-                      />
-                      <button
-                        type="button"
-                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
-                        onClick={() => setFotoSurvey((prev) => prev.filter((_, i) => i !== idx))}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowSurveyDialog(false)}>
-                Batal
-              </Button>
-              <Button onClick={handleSubmitSurvey} disabled={!tanggalSurvey}>
-                Simpan
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Map In Decision Dialog */}
-      <Dialog open={showMapInDecisionDialog} onOpenChange={setShowMapInDecisionDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Map In Order</DialogTitle>
-            <DialogDescription>Kirim order ke CMH untuk keputusan</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Catatan (Opsional)</Label>
-              <Textarea
-                value={mapInDecisionNote}
-                onChange={(e) => setMapInDecisionNote(e.target.value)}
-                placeholder="Tambahkan catatan..."
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowMapInDecisionDialog(false)}>
-                Batal
-              </Button>
-              <Button onClick={handleSubmitMapIn}>Kirim ke CMH</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* CMH Decision Dialog */}
-      <Dialog open={showCmhDialog} onOpenChange={setShowCmhDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Keputusan CMH</DialogTitle>
-            <DialogDescription>Berikan keputusan untuk order ini</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Catatan</Label>
-              <Textarea
-                value={cmhNote}
-                onChange={(e) => setCmhNote(e.target.value)}
-                placeholder="Tambahkan catatan keputusan..."
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowCmhDialog(false)}>
-                Batal
-              </Button>
-              <Button variant="destructive" onClick={() => handleSubmitCmhDecision("Reject")}>
-                <XCircle className="h-4 w-4 mr-2" />
-                Reject
-              </Button>
-              <Button variant="secondary" onClick={() => handleSubmitCmhDecision("Pertimbangkan")}>
-                <AlertTriangle className="h-4 w-4 mr-2" />
-                Pertimbangkan
-              </Button>
-              <Button onClick={() => handleSubmitCmhDecision("Approve")}>
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Approve
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
+      {/* Pertimbangan Dialog for CMH */}
       <Dialog open={showPertimbanganDialog} onOpenChange={setShowPertimbanganDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Tindak Lanjut Pertimbangan</DialogTitle>
-            <DialogDescription>Berikan keputusan lanjutan untuk order yang dalam pertimbangan</DialogDescription>
+            <DialogTitle>Keputusan Pertimbangan</DialogTitle>
+            <DialogDescription>Berikan keputusan untuk order ini</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
+            <div className="space-y-2">
+              <Label>Keputusan</Label>
+              <Select
+                value={pertimbanganAction}
+                onValueChange={(v) => setPertimbanganAction(v as "Approve" | "Reject")}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Approve">Approve</SelectItem>
+                  <SelectItem value="Reject">Reject</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label>Catatan</Label>
               <Textarea
+                placeholder="Berikan alasan keputusan..."
                 value={pertimbanganNote}
                 onChange={(e) => setPertimbanganNote(e.target.value)}
-                placeholder="Tambahkan catatan keputusan pertimbangan..."
               />
             </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowPertimbanganDialog(false)}>
-                Batal
-              </Button>
-              <Button variant="destructive" onClick={() => handleSubmitPertimbanganDecision("Reject")}>
-                <XCircle className="h-4 w-4 mr-2" />
-                Reject
-              </Button>
-              <Button onClick={() => handleSubmitPertimbanganDecision("Approve")}>
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Approve
-              </Button>
-            </div>
           </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPertimbanganDialog(false)}>
+              Batal
+            </Button>
+            <Button
+              onClick={handlePertimbanganSubmit}
+              disabled={processingAction}
+              variant={pertimbanganAction === "Reject" ? "destructive" : "default"}
+            >
+              {processingAction ? "Menyimpan..." : pertimbanganAction}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Banding Dialog */}
-      <Dialog open={showBandingDialog} onOpenChange={setShowBandingDialog}>
+      {/* Add Note Dialog */}
+      <Dialog open={showNoteDialog} onOpenChange={setShowNoteDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Ajukan Banding</DialogTitle>
-            <DialogDescription>Ajukan banding untuk order yang ditolak</DialogDescription>
+            <DialogTitle>Tambah Catatan</DialogTitle>
+            <DialogDescription>Tambahkan catatan untuk order ini</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <Label>Alasan Banding</Label>
-              <Textarea
-                value={bandingNote}
-                onChange={(e) => setBandingNote(e.target.value)}
-                placeholder="Jelaskan alasan banding..."
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowBandingDialog(false)}>
-                Batal
-              </Button>
-              <Button onClick={handleSubmitBanding} disabled={!bandingNote}>
-                Ajukan Banding
-              </Button>
+            <div className="space-y-2">
+              <Label>Catatan</Label>
+              <Textarea placeholder="Tulis catatan..." value={noteText} onChange={(e) => setNoteText(e.target.value)} />
             </div>
           </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNoteDialog(false)}>
+              Batal
+            </Button>
+            <Button onClick={handleAddNote} disabled={!noteText || processingAction}>
+              {processingAction ? "Menyimpan..." : "Simpan"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

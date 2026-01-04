@@ -77,13 +77,13 @@ export function NotificationDropdown() {
       if (isMounted.current) {
         loadNotifications()
       }
-    }, 500)
+    }, 1000)
 
     const interval = setInterval(() => {
       if (isMounted.current && !isLoadingRef.current) {
         loadNotifications()
       }
-    }, 60000)
+    }, 120000)
 
     return () => {
       isMounted.current = false

@@ -593,95 +593,115 @@ export async function markAllNotificationsAsRead(userId: string) {
 
 // ==================== INITIALIZATION ====================
 
+let initializationPromise: Promise<{ success: boolean; error?: any; cached?: boolean }> | null = null
+let lastInitTime = 0
+const INIT_COOLDOWN = 60000 // 1 minute cooldown
+
 export async function initializeDefaultData() {
-  try {
-    // Check if admin exists
-    const adminUser = await getUserByUsername("admin")
-
-    if (!adminUser) {
-      // Create default admin
-      await createUser({
-        username: "admin",
-        password: "Admin@123",
-        namaLengkap: "Administrator",
-        role: "admin",
-        isActive: true,
-      })
-      console.log("Default admin created")
-    }
-
-    const cmo1 = await getUserByUsername("25029956")
-    if (!cmo1) {
-      await createUser({
-        username: "25029956",
-        password: "cmo1234",
-        namaLengkap: "FAISAL FAJAR",
-        role: "cmo",
-        jabatan: "CMO",
-        isActive: true,
-      })
-      console.log("Default CMO 1 created")
-    }
-
-    const cmo2 = await getUserByUsername("24028259")
-    if (!cmo2) {
-      await createUser({
-        username: "24028259",
-        password: "cmo1234",
-        namaLengkap: "ROBBY ANGGARA SASMITA",
-        role: "cmo",
-        jabatan: "CMO",
-        isActive: true,
-      })
-      console.log("Default CMO 2 created")
-    }
-
-    const cmh1 = await getUserByUsername("23025309")
-    if (!cmh1) {
-      await createUser({
-        username: "23025309",
-        password: "cmh1234",
-        namaLengkap: "M SAHID",
-        role: "cmh",
-        jabatan: "CMH",
-        isActive: true,
-      })
-      console.log("Default CMH created")
-    }
-
-    // Check if merks exist
-    const merks = await getMerks()
-
-    if (merks.length === 0) {
-      // Create default merks
-      const defaultMerks = [
-        "Honda",
-        "Daihatsu",
-        "Mitsubishi",
-        "Suzuki",
-        "Toyota",
-        "Chery",
-        "Hyundai",
-        "Wuling",
-        "BYD",
-        "Isuzu",
-        "Nissan",
-        "Mazda",
-        "Kia",
-        "Hino",
-        "Citroen",
-        "JAECOO",
-      ]
-
-      for (const nama of defaultMerks) {
-        await createMerk(nama, true)
-      }
-      console.log("Default merks created")
-    }
-
-    return { success: true }
-  } catch (error) {
-    console.error("Error initializing default data:", error)
-    return { success: false, error }
+  const now = Date.now()
+  if (now - lastInitTime < INIT_COOLDOWN) {
+    return { success: true, cached: true }
   }
+
+  if (initializationPromise) {
+    return initializationPromise
+  }
+
+  initializationPromise = (async () => {
+    try {
+      lastInitTime = Date.now()
+
+      // Check if admin exists
+      const adminUser = await getUserByUsername("admin")
+
+      if (!adminUser) {
+        // Create default admin
+        await createUser({
+          username: "admin",
+          password: "Admin@123",
+          namaLengkap: "Administrator",
+          role: "admin",
+          isActive: true,
+        })
+      }
+
+      if (!adminUser) {
+        const cmo1 = await getUserByUsername("25029956")
+        if (!cmo1) {
+          await createUser({
+            username: "25029956",
+            password: "cmo1234",
+            namaLengkap: "FAISAL FAJAR",
+            role: "cmo",
+            jabatan: "CMO",
+            isActive: true,
+          })
+        }
+
+        const cmo2 = await getUserByUsername("24028259")
+        if (!cmo2) {
+          await createUser({
+            username: "24028259",
+            password: "cmo1234",
+            namaLengkap: "ROBBY ANGGARA SASMITA",
+            role: "cmo",
+            jabatan: "CMO",
+            isActive: true,
+          })
+        }
+
+        const cmh1 = await getUserByUsername("23025309")
+        if (!cmh1) {
+          await createUser({
+            username: "23025309",
+            password: "cmh1234",
+            namaLengkap: "M SAHID",
+            role: "cmh",
+            jabatan: "CMH",
+            isActive: true,
+          })
+        }
+      }
+
+      // Check if merks exist
+      const merks = await getMerks()
+
+      if (merks.length === 0) {
+        // Create default merks
+        const defaultMerks = [
+          "Honda",
+          "Daihatsu",
+          "Mitsubishi",
+          "Suzuki",
+          "Toyota",
+          "Chery",
+          "Hyundai",
+          "Wuling",
+          "BYD",
+          "Isuzu",
+          "Nissan",
+          "Mazda",
+          "Kia",
+          "Hino",
+          "Citroen",
+          "JAECOO",
+        ]
+
+        for (const nama of defaultMerks) {
+          await createMerk(nama, true)
+        }
+      }
+
+      return { success: true }
+    } catch (error) {
+      console.error("Error initializing default data:", error)
+      return { success: false, error }
+    } finally {
+      setTimeout(() => {
+        initializationPromise = null
+      }, 5000)
+    }
+  })()
+
+  return initializationPromise
 }

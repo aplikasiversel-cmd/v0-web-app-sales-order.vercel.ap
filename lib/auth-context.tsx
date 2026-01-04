@@ -30,6 +30,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+let isInitialized = false
+const INIT_KEY = "muf_data_initialized_v2"
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -37,7 +40,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        initializeDefaultData().catch(() => {})
+        const wasInitialized = typeof window !== "undefined" && localStorage.getItem(INIT_KEY)
+
+        if (!isInitialized && !wasInitialized) {
+          isInitialized = true
+          // Run initialization in background without blocking
+          initializeDefaultData()
+            .then(() => {
+              if (typeof window !== "undefined") {
+                localStorage.setItem(INIT_KEY, Date.now().toString())
+              }
+            })
+            .catch(() => {})
+        }
 
         const storedUser = sessionStore.get()
         if (storedUser) {
@@ -54,17 +69,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setUser(freshUser)
               sessionStore.set(freshUser)
             } else {
+              if (storedUser.isActive) {
+                setUser(storedUser)
+              } else {
+                sessionStore.clear()
+                setUser(null)
+              }
+            }
+          } catch (error) {
+            if (storedUser.isActive) {
+              setUser(storedUser)
+            } else {
               sessionStore.clear()
               setUser(null)
             }
-          } catch (error) {
-            sessionStore.clear()
-            setUser(null)
           }
         }
       } catch (error) {
-        sessionStore.clear()
-        setUser(null)
+        const storedUser = sessionStore.get()
+        if (storedUser && storedUser.isActive) {
+          setUser(storedUser)
+        } else {
+          sessionStore.clear()
+          setUser(null)
+        }
       }
       setIsLoading(false)
     }
@@ -206,7 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           sessionStore.set(freshUser)
         }
       } catch (error) {
-        // Silent failure
+        // Silent failure - keep current user
       }
     }
   }

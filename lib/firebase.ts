@@ -30,6 +30,44 @@ export const COLLECTIONS = {
   NOTIFICATIONS: "notifications",
 }
 
+interface CacheEntry {
+  data: any
+  timestamp: number
+}
+
+const cache: Map<string, CacheEntry> = new Map()
+const CACHE_TTL = 60000 // 1 minute cache TTL
+const QUERY_CACHE_TTL = 30000 // 30 seconds for queries
+
+function getCacheKey(type: string, ...args: string[]): string {
+  return `${type}:${args.join(":")}`
+}
+
+function getFromCache(key: string, ttl: number = CACHE_TTL): any | null {
+  const entry = cache.get(key)
+  if (entry && Date.now() - entry.timestamp < ttl) {
+    return entry.data
+  }
+  cache.delete(key)
+  return null
+}
+
+function setCache(key: string, data: any): void {
+  cache.set(key, { data, timestamp: Date.now() })
+}
+
+let lastRequestTime = 0
+const MIN_REQUEST_INTERVAL = 100 // Minimum 100ms between requests
+
+async function waitForRateLimit(): Promise<void> {
+  const now = Date.now()
+  const timeSinceLastRequest = now - lastRequestTime
+  if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+    await new Promise((resolve) => setTimeout(resolve, MIN_REQUEST_INTERVAL - timeSinceLastRequest))
+  }
+  lastRequestTime = Date.now()
+}
+
 // Helper to convert Firestore REST format to plain object
 function firestoreDocToObject(doc: any): Record<string, any> {
   const fields = doc.fields || {}
@@ -121,20 +159,25 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 1
   }
 }
 
-async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3, timeoutMs = 15000): Promise<Response> {
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2, timeoutMs = 15000): Promise<Response> {
   let lastError: Error | null = null
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      await waitForRateLimit()
       const response = await fetchWithTimeout(url, options, timeoutMs)
+
+      if (response.status === 429) {
+        console.log(`[v0] Rate limited (429), returning empty response`)
+        return response
+      }
+
       return response
     } catch (error: any) {
       lastError = error
-      console.log(`[v0] Attempt ${attempt}/${maxRetries} failed: ${error.message}`)
 
       if (attempt < maxRetries) {
-        // Wait before retry with exponential backoff
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 3000)
         await new Promise((resolve) => setTimeout(resolve, delay))
       }
     }
@@ -147,6 +190,12 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3,
 export const firestoreREST = {
   // Get all documents in a collection with pagination support to ensure all data is retrieved
   async getCollection(collectionName: string): Promise<any[]> {
+    const cacheKey = getCacheKey("collection", collectionName)
+    const cached = getFromCache(cacheKey, CACHE_TTL)
+    if (cached !== null) {
+      return cached
+    }
+
     try {
       const apiKeyParam = getApiKeyParam()
       const allDocuments: any[] = []
@@ -160,7 +209,6 @@ export const firestoreREST = {
         if (nextPageToken) params.set("pageToken", nextPageToken)
 
         const url = `${getBaseUrl()}/${collectionName}?${params.toString()}`
-        console.log("[v0] Firestore GET collection:", collectionName, nextPageToken ? "(continuing...)" : "")
 
         const response = await fetchWithRetry(url, {
           method: "GET",
@@ -168,8 +216,8 @@ export const firestoreREST = {
         })
 
         if (!response.ok) {
-          const errorText = await response.text()
-          console.error(`[v0] Firestore GET error: ${response.status}`, errorText)
+          const cachedOnError = getFromCache(cacheKey, CACHE_TTL * 5) // Extended TTL on error
+          if (cachedOnError) return cachedOnError
           break
         }
 
@@ -181,20 +229,27 @@ export const firestoreREST = {
         nextPageToken = data.nextPageToken || null
       } while (nextPageToken)
 
-      console.log("[v0] Firestore GET results:", allDocuments.length, "documents total")
+      setCache(cacheKey, allDocuments)
       return allDocuments
     } catch (error: any) {
       console.error(`[v0] Error getting collection ${collectionName}:`, error.message)
+      const cachedOnError = getFromCache(cacheKey, CACHE_TTL * 5)
+      if (cachedOnError) return cachedOnError
       return []
     }
   },
 
   // Get a single document
   async getDocument(collectionName: string, docId: string): Promise<any | null> {
+    const cacheKey = getCacheKey("doc", collectionName, docId)
+    const cached = getFromCache(cacheKey, CACHE_TTL)
+    if (cached !== null) {
+      return cached
+    }
+
     try {
       const apiKeyParam = getApiKeyParam()
       const url = `${getBaseUrl()}/${collectionName}/${docId}${apiKeyParam ? `?${apiKeyParam}` : ""}`
-      console.log("[v0] Firestore GET document:", collectionName, docId)
 
       const response = await fetchWithRetry(url, {
         method: "GET",
@@ -203,14 +258,19 @@ export const firestoreREST = {
 
       if (!response.ok) {
         if (response.status === 404) return null
-        console.error(`[v0] Firestore GET error: ${response.status}`)
+        const cachedOnError = getFromCache(cacheKey, CACHE_TTL * 5)
+        if (cachedOnError) return cachedOnError
         return null
       }
 
       const data = await response.json()
-      return firestoreDocToObject(data)
+      const result = firestoreDocToObject(data)
+      setCache(cacheKey, result)
+      return result
     } catch (error: any) {
       console.error(`[v0] Error getting document ${collectionName}/${docId}:`, error.message)
+      const cachedOnError = getFromCache(cacheKey, CACHE_TTL * 5)
+      if (cachedOnError) return cachedOnError
       return null
     }
   },
@@ -220,7 +280,6 @@ export const firestoreREST = {
     try {
       const apiKeyParam = getApiKeyParam()
       const url = `${getBaseUrl()}/${collectionName}/${docId}${apiKeyParam ? `?${apiKeyParam}` : ""}`
-      console.log("[v0] Firestore SET document:", collectionName, docId)
 
       const response = await fetchWithRetry(
         url,
@@ -229,7 +288,7 @@ export const firestoreREST = {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(objectToFirestoreDoc(data)),
         },
-        3,
+        2,
         20000,
       )
 
@@ -240,8 +299,12 @@ export const firestoreREST = {
       }
 
       const result = await response.json()
-      console.log("[v0] Firestore SET success")
-      return firestoreDocToObject(result)
+      const doc = firestoreDocToObject(result)
+
+      setCache(getCacheKey("doc", collectionName, docId), doc)
+      cache.delete(getCacheKey("collection", collectionName))
+
+      return doc
     } catch (error: any) {
       console.error(`[v0] Error setting document ${collectionName}/${docId}:`, error.message)
       throw error
@@ -257,7 +320,6 @@ export const firestoreREST = {
       const apiKeyParam = getApiKeyParam()
       const separator = updateMask ? "&" : ""
       const url = `${getBaseUrl()}/${collectionName}/${docId}?${updateMask}${apiKeyParam ? `${separator}${apiKeyParam}` : ""}`
-      console.log("[v0] Firestore UPDATE document:", collectionName, docId)
 
       const response = await fetchWithRetry(
         url,
@@ -266,7 +328,7 @@ export const firestoreREST = {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(objectToFirestoreDoc(updates)),
         },
-        3,
+        2,
         20000,
       )
 
@@ -276,7 +338,9 @@ export const firestoreREST = {
         return false
       }
 
-      console.log("[v0] Firestore UPDATE success")
+      cache.delete(getCacheKey("doc", collectionName, docId))
+      cache.delete(getCacheKey("collection", collectionName))
+
       return true
     } catch (error: any) {
       console.error(`[v0] Error updating document ${collectionName}/${docId}:`, error.message)
@@ -289,7 +353,6 @@ export const firestoreREST = {
     try {
       const apiKeyParam = getApiKeyParam()
       const url = `${getBaseUrl()}/${collectionName}/${docId}${apiKeyParam ? `?${apiKeyParam}` : ""}`
-      console.log("[v0] Firestore DELETE document:", collectionName, docId)
 
       const response = await fetchWithRetry(url, {
         method: "DELETE",
@@ -301,7 +364,9 @@ export const firestoreREST = {
         return false
       }
 
-      console.log("[v0] Firestore DELETE success")
+      cache.delete(getCacheKey("doc", collectionName, docId))
+      cache.delete(getCacheKey("collection", collectionName))
+
       return true
     } catch (error: any) {
       console.error(`[v0] Error deleting document ${collectionName}/${docId}:`, error.message)
@@ -311,10 +376,15 @@ export const firestoreREST = {
 
   // Query documents with simple where clause
   async queryCollection(collectionName: string, fieldPath: string, op: string, value: any): Promise<any[]> {
+    const cacheKey = getCacheKey("query", collectionName, fieldPath, op, String(value))
+    const cached = getFromCache(cacheKey, QUERY_CACHE_TTL)
+    if (cached !== null) {
+      return cached
+    }
+
     try {
       const apiKeyParam = getApiKeyParam()
       const url = `${getBaseUrl()}:runQuery${apiKeyParam ? `?${apiKeyParam}` : ""}`
-      console.log("[v0] Firestore QUERY:", collectionName, fieldPath, op, value)
 
       const structuredQuery = {
         structuredQuery: {
@@ -336,19 +406,26 @@ export const firestoreREST = {
       })
 
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`[v0] Firestore QUERY error: ${response.status}`, errorText)
+        const cachedOnError = getFromCache(cacheKey, QUERY_CACHE_TTL * 5)
+        if (cachedOnError) return cachedOnError
         return []
       }
 
       const data = await response.json()
       const results = data.filter((item: any) => item.document).map((item: any) => firestoreDocToObject(item.document))
-      console.log("[v0] Firestore QUERY results:", results.length, "documents")
+
+      setCache(cacheKey, results)
       return results
     } catch (error: any) {
       console.error(`[v0] Error querying collection ${collectionName}:`, error.message)
+      const cachedOnError = getFromCache(cacheKey, QUERY_CACHE_TTL * 5)
+      if (cachedOnError) return cachedOnError
       return []
     }
+  },
+
+  clearCache() {
+    cache.clear()
   },
 }
 
