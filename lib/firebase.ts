@@ -145,28 +145,44 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3,
 
 // Firestore REST API functions
 export const firestoreREST = {
-  // Get all documents in a collection
+  // Get all documents in a collection with pagination support to ensure all data is retrieved
   async getCollection(collectionName: string): Promise<any[]> {
     try {
       const apiKeyParam = getApiKeyParam()
-      const url = `${getBaseUrl()}/${collectionName}${apiKeyParam ? `?${apiKeyParam}` : ""}`
-      console.log("[v0] Firestore GET collection:", collectionName)
+      const allDocuments: any[] = []
+      let nextPageToken: string | null = null
 
-      const response = await fetchWithRetry(url, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      })
+      do {
+        // Build URL with pageSize and pageToken
+        const params = new URLSearchParams()
+        params.set("pageSize", "1000") // Get up to 1000 documents per request
+        if (apiKeyParam) params.set("key", FIREBASE_CONFIG.apiKey)
+        if (nextPageToken) params.set("pageToken", nextPageToken)
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`[v0] Firestore GET error: ${response.status}`, errorText)
-        return []
-      }
+        const url = `${getBaseUrl()}/${collectionName}?${params.toString()}`
+        console.log("[v0] Firestore GET collection:", collectionName, nextPageToken ? "(continuing...)" : "")
 
-      const data = await response.json()
-      const results = (data.documents || []).map(firestoreDocToObject)
-      console.log("[v0] Firestore GET results:", results.length, "documents")
-      return results
+        const response = await fetchWithRetry(url, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error(`[v0] Firestore GET error: ${response.status}`, errorText)
+          break
+        }
+
+        const data = await response.json()
+        const documents = (data.documents || []).map(firestoreDocToObject)
+        allDocuments.push(...documents)
+
+        // Check for next page
+        nextPageToken = data.nextPageToken || null
+      } while (nextPageToken)
+
+      console.log("[v0] Firestore GET results:", allDocuments.length, "documents total")
+      return allDocuments
     } catch (error: any) {
       console.error(`[v0] Error getting collection ${collectionName}:`, error.message)
       return []
