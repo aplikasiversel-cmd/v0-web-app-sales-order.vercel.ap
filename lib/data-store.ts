@@ -1,45 +1,45 @@
 import type { User, Program, Order, SimulasiKredit, Aktivitas, OrderNote, Merk, Dealer, Notification } from "./types"
 import {
-  getUsers as dbGetUsers,
-  getUserById as dbGetUserById,
-  getUserByUsername as dbGetUserByUsername,
-  getUsersByRole as dbGetUsersByRole,
-  createUser as dbCreateUser,
-  updateUser as dbUpdateUser,
-  deleteUser as dbDeleteUser,
-  getPrograms as dbGetPrograms,
-  createProgram as dbCreateProgram,
-  updateProgram as dbUpdateProgram,
-  deleteProgram as dbDeleteProgram,
-  getOrders as dbGetOrders,
-  getOrderById as dbGetOrderById,
-  createOrder as dbCreateOrder,
-  updateOrder as dbUpdateOrder,
-  deleteOrder as dbDeleteOrder,
-  createOrderNote as dbCreateOrderNote,
-  getOrderNotesByOrderId as dbGetOrderNotesByOrderId,
-  getAllOrderNotes as dbGetAllOrderNotes,
-  createSimulasi as dbCreateSimulasi,
-  getSimulasiByUserId as dbGetSimulasiByUserId,
-  getSimulasi as dbGetSimulasi,
-  createAktivitas as dbCreateAktivitas,
-  getAktivitasByUserId as dbGetAktivitasByUserId,
-  getAktivitas as dbGetAktivitas,
-  deleteAktivitas as dbDeleteAktivitas,
-  getMerks as dbGetMerks,
-  createMerk as dbCreateMerk,
-  updateMerk as dbUpdateMerk,
-  deleteMerk as dbDeleteMerk,
-  getDealers as dbGetDealers,
-  createDealer as dbCreateDealer,
-  updateDealer as dbUpdateDealer,
-  deleteDealer as dbDeleteDealer,
-  getNotifications as dbGetNotifications,
-  createNotification as dbCreateNotification,
-  markNotificationAsRead as dbMarkNotificationAsRead,
-  markAllNotificationsAsRead as dbMarkAllNotificationsAsRead,
-  initializeDefaultData as dbInitializeDefaultData,
-} from "@/app/actions/db-actions"
+  getUsers as fbGetUsers,
+  getUserById as fbGetUserById,
+  getUserByUsername as fbGetUserByUsername,
+  getUsersByRole as fbGetUsersByRole,
+  createUser as fbCreateUser,
+  updateUser as fbUpdateUser,
+  deleteUser as fbDeleteUser,
+  getPrograms as fbGetPrograms,
+  createProgram as fbCreateProgram,
+  updateProgram as fbUpdateProgram,
+  deleteProgram as fbDeleteProgram,
+  getOrders as fbGetOrders,
+  getOrderById as fbGetOrderById,
+  createOrder as fbCreateOrder,
+  updateOrder as fbUpdateOrder,
+  deleteOrder as fbDeleteOrder,
+  createOrderNote as fbCreateOrderNote,
+  getOrderNotesByOrderId as fbGetOrderNotesByOrderId,
+  getAllOrderNotes as fbGetAllOrderNotes,
+  createSimulasi as fbCreateSimulasi,
+  getSimulasiByUserId as fbGetSimulasiByUserId,
+  getSimulasi as fbGetSimulasi,
+  createAktivitas as fbCreateAktivitas,
+  getAktivitasByUserId as fbGetAktivitasByUserId,
+  getAktivitas as fbGetAktivitas,
+  deleteAktivitas as fbDeleteAktivitas,
+  getMerks as fbGetMerks,
+  createMerk as fbCreateMerk,
+  updateMerk as fbUpdateMerk,
+  deleteMerk as fbDeleteMerk,
+  getDealers as fbGetDealers,
+  createDealer as fbCreateDealer,
+  updateDealer as fbUpdateDealer,
+  deleteDealer as fbDeleteDealer,
+  getNotifications as fbGetNotifications,
+  createNotification as fbCreateNotification,
+  markNotificationAsRead as fbMarkNotificationAsRead,
+  markAllNotificationsAsRead as fbMarkAllNotificationsAsRead,
+  initializeDefaultData as fbInitializeDefaultData,
+} from "@/app/actions/firebase-actions"
 
 // Helper untuk generate ID
 export function generateId(): string {
@@ -66,38 +66,38 @@ const STORAGE_KEYS = {
   CURRENT_USER: "muf_current_user",
 }
 
-// Helper to map DB user to app User type
-function mapDbUserToUser(dbUser: any): User {
-  if (!dbUser) return null as any
+// Helper to map user
+function mapUser(user: any): User {
+  if (!user) return null as any
   return {
-    id: dbUser.id,
-    username: dbUser.username,
-    password: dbUser.password,
-    namaLengkap: dbUser.namaLengkap || dbUser.nama_lengkap,
-    nomorHp: dbUser.nomorHp || dbUser.noHp || dbUser.no_hp || "",
-    role: dbUser.role,
-    merk: Array.isArray(dbUser.merk) ? dbUser.merk : dbUser.merk ? [dbUser.merk] : [],
-    dealer: dbUser.dealer,
-    jabatan: dbUser.jabatan,
-    isFirstLogin: dbUser.isFirstLogin ?? dbUser.is_first_login ?? false,
-    passwordLastChanged: dbUser.passwordLastChanged || dbUser.password_last_changed,
-    isActive: dbUser.isActive ?? dbUser.is_active ?? true,
-    createdAt: dbUser.createdAt || dbUser.created_at,
-    spvId: dbUser.spvId || dbUser.spv_id || "",
-    spvName: dbUser.spvName || dbUser.spv_name || "",
-    cmhId: dbUser.cmhId || dbUser.cmh_id || "",
-    cmhName: dbUser.cmhName || dbUser.cmh_name || "",
+    id: user.id,
+    username: user.username,
+    password: user.password,
+    namaLengkap: user.namaLengkap || user.nama_lengkap,
+    nomorHp: user.nomorHp || user.noHp || user.no_hp || "",
+    role: user.role,
+    merk: Array.isArray(user.merk) ? user.merk : user.merk ? [user.merk] : [],
+    dealer: user.dealer,
+    jabatan: user.jabatan,
+    isFirstLogin: user.isFirstLogin ?? user.is_first_login ?? false,
+    passwordLastChanged: user.passwordLastChanged || user.password_last_changed,
+    isActive: user.isActive ?? user.is_active ?? true,
+    createdAt: user.createdAt || user.created_at,
+    spvId: user.spvId || user.spv_id || "",
+    spvName: user.spvName || user.spv_name || "",
+    cmhId: user.cmhId || user.cmh_id || "",
+    cmhName: user.cmhName || user.cmh_name || "",
   }
 }
 
-// ==================== NEON DATABASE STORES ====================
+// ==================== FIREBASE STORES ====================
 
-// User Store - Uses Neon directly
+// User Store - Uses Firebase
 export const userStore = {
   getAll: async (): Promise<User[]> => {
     try {
-      const users = await dbGetUsers()
-      return Array.isArray(users) ? users.map(mapDbUserToUser).filter(Boolean) : []
+      const users = await fbGetUsers()
+      return Array.isArray(users) ? users.map(mapUser).filter(Boolean) : []
     } catch (error) {
       console.error("[v0] Error getting users:", error)
       return []
@@ -107,8 +107,8 @@ export const userStore = {
   getById: async (id: string): Promise<User | null> => {
     try {
       if (!id) return null
-      const user = await dbGetUserById(id)
-      return user ? mapDbUserToUser(user) : null
+      const user = await fbGetUserById(id)
+      return user ? mapUser(user) : null
     } catch (error) {
       console.error("[v0] Error getting user by id:", error)
       return null
@@ -118,8 +118,8 @@ export const userStore = {
   getByUsername: async (username: string): Promise<User | null> => {
     try {
       if (!username) return null
-      const user = await dbGetUserByUsername(username)
-      return user ? mapDbUserToUser(user) : null
+      const user = await fbGetUserByUsername(username)
+      return user ? mapUser(user) : null
     } catch (error) {
       console.error("[v0] Error getting user by username:", error)
       return null
@@ -129,8 +129,8 @@ export const userStore = {
   getByRole: async (role: string): Promise<User[]> => {
     try {
       if (!role) return []
-      const users = await dbGetUsersByRole(role)
-      return Array.isArray(users) ? users.map(mapDbUserToUser).filter(Boolean) : []
+      const users = await fbGetUsersByRole(role)
+      return Array.isArray(users) ? users.map(mapUser).filter(Boolean) : []
     } catch (error) {
       console.error("[v0] Error getting users by role:", error)
       return []
@@ -139,8 +139,8 @@ export const userStore = {
 
   add: async (userData: Omit<User, "id" | "createdAt">): Promise<User> => {
     try {
-      const user = await dbCreateUser(userData)
-      return mapDbUserToUser(user)
+      const user = await fbCreateUser(userData as any)
+      return mapUser(user)
     } catch (error) {
       console.error("[v0] Error creating user:", error)
       throw error
@@ -150,7 +150,7 @@ export const userStore = {
   update: async (id: string, updates: Partial<User>): Promise<void> => {
     try {
       if (!id) return
-      await dbUpdateUser(id, updates)
+      await fbUpdateUser(id, updates)
     } catch (error) {
       console.error("[v0] Error updating user:", error)
       throw error
@@ -160,7 +160,7 @@ export const userStore = {
   delete: async (id: string): Promise<void> => {
     try {
       if (!id) return
-      await dbDeleteUser(id)
+      await fbDeleteUser(id)
     } catch (error) {
       console.error("[v0] Error deleting user:", error)
       throw error
@@ -168,11 +168,11 @@ export const userStore = {
   },
 }
 
-// Program Store - Uses Neon
+// Program Store - Uses Firebase
 export const programStore = {
   getAll: async (): Promise<Program[]> => {
     try {
-      const programs = await dbGetPrograms()
+      const programs = await fbGetPrograms()
       return Array.isArray(programs) ? programs : []
     } catch (error) {
       console.error("[v0] Error getting programs:", error)
@@ -182,7 +182,7 @@ export const programStore = {
 
   add: async (programData: Omit<Program, "id" | "createdAt" | "updatedAt">): Promise<Program> => {
     try {
-      return await dbCreateProgram(programData)
+      return await fbCreateProgram(programData as any)
     } catch (error) {
       console.error("[v0] Error creating program:", error)
       throw error
@@ -192,7 +192,7 @@ export const programStore = {
   update: async (id: string, updates: Partial<Program>): Promise<void> => {
     try {
       if (!id) return
-      await dbUpdateProgram(id, updates)
+      await fbUpdateProgram(id, updates)
     } catch (error) {
       console.error("[v0] Error updating program:", error)
       throw error
@@ -202,7 +202,7 @@ export const programStore = {
   delete: async (id: string): Promise<void> => {
     try {
       if (!id) return
-      await dbDeleteProgram(id)
+      await fbDeleteProgram(id)
     } catch (error) {
       console.error("[v0] Error deleting program:", error)
       throw error
@@ -210,11 +210,11 @@ export const programStore = {
   },
 }
 
-// Order Store - Uses Neon
+// Order Store - Uses Firebase
 export const orderStore = {
   getAll: async (): Promise<Order[]> => {
     try {
-      const orders = await dbGetOrders()
+      const orders = await fbGetOrders()
       return Array.isArray(orders) ? orders : []
     } catch (error) {
       console.error("[v0] Error getting orders:", error)
@@ -225,7 +225,7 @@ export const orderStore = {
   getById: async (id: string): Promise<Order | null> => {
     try {
       if (!id) return null
-      return await dbGetOrderById(id)
+      return await fbGetOrderById(id)
     } catch (error) {
       console.error("[v0] Error getting order by id:", error)
       return null
@@ -234,7 +234,7 @@ export const orderStore = {
 
   getByCmoId: async (cmoId: string, cmoUsername?: string, cmoName?: string): Promise<Order[]> => {
     try {
-      const allOrders = await dbGetOrders()
+      const allOrders = await fbGetOrders()
       if (!Array.isArray(allOrders)) return []
 
       return allOrders.filter((order: Order) => {
@@ -251,7 +251,7 @@ export const orderStore = {
 
   add: async (orderData: Omit<Order, "id" | "createdAt" | "updatedAt">): Promise<Order> => {
     try {
-      return await dbCreateOrder(orderData)
+      return await fbCreateOrder(orderData as any)
     } catch (error) {
       console.error("[v0] Error creating order:", error)
       throw error
@@ -261,7 +261,7 @@ export const orderStore = {
   update: async (id: string, updates: Partial<Order>): Promise<void> => {
     try {
       if (!id) return
-      await dbUpdateOrder(id, updates)
+      await fbUpdateOrder(id, updates)
     } catch (error) {
       console.error("[v0] Error updating order:", error)
       throw error
@@ -271,7 +271,7 @@ export const orderStore = {
   delete: async (id: string): Promise<void> => {
     try {
       if (!id) return
-      await dbDeleteOrder(id)
+      await fbDeleteOrder(id)
     } catch (error) {
       console.error("[v0] Error deleting order:", error)
       throw error
@@ -279,11 +279,11 @@ export const orderStore = {
   },
 }
 
-// Simulasi Store - Uses Neon
+// Simulasi Store - Uses Firebase
 export const simulasiStore = {
   getAll: async (): Promise<SimulasiKredit[]> => {
     try {
-      const simulasi = await dbGetSimulasi()
+      const simulasi = await fbGetSimulasi()
       return Array.isArray(simulasi) ? simulasi : []
     } catch (error) {
       console.error("[v0] Error getting simulasi:", error)
@@ -294,7 +294,7 @@ export const simulasiStore = {
   getByUserId: async (userId: string): Promise<SimulasiKredit[]> => {
     try {
       if (!userId) return []
-      const simulasi = await dbGetSimulasiByUserId(userId)
+      const simulasi = await fbGetSimulasiByUserId(userId)
       return Array.isArray(simulasi) ? simulasi : []
     } catch (error) {
       console.error("[v0] Error getting simulasi by user:", error)
@@ -304,7 +304,7 @@ export const simulasiStore = {
 
   add: async (data: Omit<SimulasiKredit, "id" | "createdAt">): Promise<SimulasiKredit> => {
     try {
-      return await dbCreateSimulasi(data)
+      return await fbCreateSimulasi(data as any)
     } catch (error) {
       console.error("[v0] Error creating simulasi:", error)
       throw error
@@ -312,11 +312,11 @@ export const simulasiStore = {
   },
 }
 
-// Aktivitas Store - Uses Neon
+// Aktivitas Store - Uses Firebase
 export const aktivitasStore = {
   getAll: async (): Promise<Aktivitas[]> => {
     try {
-      const aktivitas = await dbGetAktivitas()
+      const aktivitas = await fbGetAktivitas()
       return Array.isArray(aktivitas) ? aktivitas : []
     } catch (error) {
       console.error("[v0] Error getting aktivitas:", error)
@@ -327,7 +327,7 @@ export const aktivitasStore = {
   getByUserId: async (userId: string): Promise<Aktivitas[]> => {
     try {
       if (!userId) return []
-      const aktivitas = await dbGetAktivitasByUserId(userId)
+      const aktivitas = await fbGetAktivitasByUserId(userId)
       return Array.isArray(aktivitas) ? aktivitas : []
     } catch (error) {
       console.error("[v0] Error getting aktivitas by user:", error)
@@ -337,7 +337,7 @@ export const aktivitasStore = {
 
   add: async (data: Omit<Aktivitas, "id" | "createdAt">): Promise<Aktivitas> => {
     try {
-      return await dbCreateAktivitas(data)
+      return await fbCreateAktivitas(data as any)
     } catch (error) {
       console.error("[v0] Error creating aktivitas:", error)
       throw error
@@ -347,7 +347,7 @@ export const aktivitasStore = {
   delete: async (id: string): Promise<void> => {
     try {
       if (!id) return
-      await dbDeleteAktivitas(id)
+      await fbDeleteAktivitas(id)
     } catch (error) {
       console.error("[v0] Error deleting aktivitas:", error)
       throw error
@@ -355,11 +355,11 @@ export const aktivitasStore = {
   },
 }
 
-// Merk Store - Uses Neon
+// Merk Store - Uses Firebase
 export const merkStore = {
   getAll: async (): Promise<Merk[]> => {
     try {
-      const merks = await dbGetMerks()
+      const merks = await fbGetMerks()
       return Array.isArray(merks) ? merks : []
     } catch (error) {
       console.error("[v0] Error getting merks:", error)
@@ -369,7 +369,7 @@ export const merkStore = {
 
   add: async (data: Omit<Merk, "id" | "createdAt">): Promise<Merk> => {
     try {
-      return await dbCreateMerk(data)
+      return await fbCreateMerk(data as any)
     } catch (error) {
       console.error("[v0] Error creating merk:", error)
       throw error
@@ -379,7 +379,7 @@ export const merkStore = {
   update: async (id: string, updates: Partial<Merk>): Promise<void> => {
     try {
       if (!id) return
-      await dbUpdateMerk(id, updates)
+      await fbUpdateMerk(id, updates)
     } catch (error) {
       console.error("[v0] Error updating merk:", error)
       throw error
@@ -389,7 +389,7 @@ export const merkStore = {
   delete: async (id: string): Promise<void> => {
     try {
       if (!id) return
-      await dbDeleteMerk(id)
+      await fbDeleteMerk(id)
     } catch (error) {
       console.error("[v0] Error deleting merk:", error)
       throw error
@@ -397,11 +397,11 @@ export const merkStore = {
   },
 }
 
-// Dealer Store - Uses Neon
+// Dealer Store - Uses Firebase
 export const dealerStore = {
   getAll: async (): Promise<Dealer[]> => {
     try {
-      const dealers = await dbGetDealers()
+      const dealers = await fbGetDealers()
       return Array.isArray(dealers) ? dealers : []
     } catch (error) {
       console.error("[v0] Error getting dealers:", error)
@@ -411,7 +411,7 @@ export const dealerStore = {
 
   add: async (data: Omit<Dealer, "id" | "createdAt">): Promise<Dealer> => {
     try {
-      return await dbCreateDealer(data)
+      return await fbCreateDealer(data as any)
     } catch (error) {
       console.error("[v0] Error creating dealer:", error)
       throw error
@@ -421,7 +421,7 @@ export const dealerStore = {
   update: async (id: string, updates: Partial<Dealer>): Promise<void> => {
     try {
       if (!id) return
-      await dbUpdateDealer(id, updates)
+      await fbUpdateDealer(id, updates)
     } catch (error) {
       console.error("[v0] Error updating dealer:", error)
       throw error
@@ -431,7 +431,7 @@ export const dealerStore = {
   delete: async (id: string): Promise<void> => {
     try {
       if (!id) return
-      await dbDeleteDealer(id)
+      await fbDeleteDealer(id)
     } catch (error) {
       console.error("[v0] Error deleting dealer:", error)
       throw error
@@ -439,11 +439,11 @@ export const dealerStore = {
   },
 }
 
-// Notification Store - Uses Neon
+// Notification Store - Uses Firebase
 export const notificationStore = {
   getAll: async (): Promise<Notification[]> => {
     try {
-      const notifications = await dbGetNotifications()
+      const notifications = await fbGetNotifications()
       return Array.isArray(notifications) ? notifications : []
     } catch (error) {
       console.error("[v0] Error getting notifications:", error)
@@ -454,7 +454,7 @@ export const notificationStore = {
   getByUserId: async (userId: string): Promise<Notification[]> => {
     try {
       if (!userId) return []
-      const notifications = await dbGetNotifications()
+      const notifications = await fbGetNotifications()
       if (!Array.isArray(notifications)) return []
       return notifications.filter((n: Notification) => n.userId === userId)
     } catch (error) {
@@ -465,7 +465,7 @@ export const notificationStore = {
 
   add: async (data: Omit<Notification, "id" | "createdAt">): Promise<Notification> => {
     try {
-      return await dbCreateNotification(data)
+      return await fbCreateNotification(data as any)
     } catch (error) {
       console.error("[v0] Error creating notification:", error)
       throw error
@@ -475,7 +475,7 @@ export const notificationStore = {
   markAsRead: async (id: string): Promise<void> => {
     try {
       if (!id) return
-      await dbMarkNotificationAsRead(id)
+      await fbMarkNotificationAsRead(id)
     } catch (error) {
       console.error("[v0] Error marking notification as read:", error)
       throw error
@@ -485,7 +485,7 @@ export const notificationStore = {
   markAllAsRead: async (userId: string): Promise<void> => {
     try {
       if (!userId) return
-      await dbMarkAllNotificationsAsRead(userId)
+      await fbMarkAllNotificationsAsRead(userId)
     } catch (error) {
       console.error("[v0] Error marking all notifications as read:", error)
       throw error
@@ -493,11 +493,11 @@ export const notificationStore = {
   },
 }
 
-// Note Store - Uses Neon
+// Note Store - Uses Firebase
 export const noteStore = {
   getAll: async (): Promise<OrderNote[]> => {
     try {
-      const notes = await dbGetAllOrderNotes()
+      const notes = await fbGetAllOrderNotes()
       return Array.isArray(notes) ? notes : []
     } catch (error) {
       console.error("[v0] Error getting all notes:", error)
@@ -508,7 +508,7 @@ export const noteStore = {
   getByOrderId: async (orderId: string): Promise<OrderNote[]> => {
     try {
       if (!orderId) return []
-      const notes = await dbGetOrderNotesByOrderId(orderId)
+      const notes = await fbGetOrderNotesByOrderId(orderId)
       return Array.isArray(notes) ? notes : []
     } catch (error) {
       console.error("[v0] Error getting notes by order:", error)
@@ -518,7 +518,7 @@ export const noteStore = {
 
   add: async (data: Omit<OrderNote, "id" | "createdAt">): Promise<OrderNote> => {
     try {
-      return await dbCreateOrderNote(data)
+      return await fbCreateOrderNote(data as any)
     } catch (error) {
       console.error("[v0] Error creating note:", error)
       throw error
@@ -534,7 +534,7 @@ export const sessionStore = {
       const stored = sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER)
       if (stored) {
         const parsed = JSON.parse(stored)
-        return mapDbUserToUser(parsed)
+        return mapUser(parsed)
       }
       return null
     } catch {
@@ -557,5 +557,5 @@ export const sessionStore = {
   },
 }
 
-// Export initialize function from db-actions (Neon)
-export const initializeDefaultData = dbInitializeDefaultData
+// Export initialize function from Firebase
+export const initializeDefaultData = fbInitializeDefaultData

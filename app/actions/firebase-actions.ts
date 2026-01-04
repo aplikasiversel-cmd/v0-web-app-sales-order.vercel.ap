@@ -380,7 +380,6 @@ export async function createOrderNote(noteData: {
   orderId: string
   userId: string
   userName: string
-  role: string
   note: string
   status?: string
 }) {
@@ -391,7 +390,6 @@ export async function createOrderNote(noteData: {
     orderId: noteData.orderId,
     userId: noteData.userId,
     userName: noteData.userName,
-    role: noteData.role,
     note: noteData.note,
     status: noteData.status || null,
     createdAt: now,
@@ -403,6 +401,10 @@ export async function createOrderNote(noteData: {
 
 export async function getOrderNotesByOrderId(orderId: string) {
   return await firestoreREST.queryCollection(COLLECTIONS.ORDER_NOTES, "orderId", "==", orderId)
+}
+
+export async function getAllOrderNotes(): Promise<any[]> {
+  return await firestoreREST.getCollection(COLLECTIONS.ORDER_NOTES)
 }
 
 // ==================== SIMULASI ====================

@@ -23,7 +23,7 @@ export interface Notification {
 }
 
 let notificationsCache: { data: Notification[]; timestamp: number } | null = null
-const CACHE_TTL = 30000 // 30 seconds
+const CACHE_TTL = 300000 // 5 minutes
 
 async function getCachedNotifications(): Promise<Notification[]> {
   const now = Date.now()
@@ -37,6 +37,7 @@ async function getCachedNotifications(): Promise<Notification[]> {
     return allNotifications
   } catch (error) {
     console.error("[Notification] Error getting cached notifications:", error)
+    // Return stale cache if available
     return notificationsCache?.data || []
   }
 }
@@ -97,10 +98,28 @@ export async function createNotification(
   }
 }
 
+let usersCache: { data: any[]; timestamp: number } | null = null
+const USERS_CACHE_TTL = 300000 // 5 minutes
+
+async function getCachedUsers(): Promise<any[]> {
+  const now = Date.now()
+  if (usersCache && now - usersCache.timestamp < USERS_CACHE_TTL) {
+    return usersCache.data
+  }
+
+  try {
+    const users = await getUsers()
+    usersCache = { data: users, timestamp: now }
+    return users
+  } catch (error) {
+    return usersCache?.data || []
+  }
+}
+
 // Get users by role for sending notifications
 export async function getUsersByRole(role: UserRole): Promise<{ id: string; namaLengkap: string }[]> {
   try {
-    const users = await getUsers()
+    const users = await getCachedUsers()
     return users.filter((u) => u.role === role && u.isActive).map((u) => ({ id: u.id, namaLengkap: u.namaLengkap }))
   } catch (error) {
     console.error("[Notification] Error getting users by role:", error)

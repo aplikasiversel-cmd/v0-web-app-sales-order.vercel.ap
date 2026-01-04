@@ -36,8 +36,8 @@ interface CacheEntry {
 }
 
 const cache: Map<string, CacheEntry> = new Map()
-const CACHE_TTL = 60000 // 1 minute cache TTL
-const QUERY_CACHE_TTL = 30000 // 30 seconds for queries
+const CACHE_TTL = 300000 // 5 minutes cache TTL
+const QUERY_CACHE_TTL = 120000 // 2 minutes for queries
 
 function getCacheKey(type: string, ...args: string[]): string {
   return `${type}:${args.join(":")}`
@@ -57,7 +57,7 @@ function setCache(key: string, data: any): void {
 }
 
 let lastRequestTime = 0
-const MIN_REQUEST_INTERVAL = 100 // Minimum 100ms between requests
+const MIN_REQUEST_INTERVAL = 500
 
 async function waitForRateLimit(): Promise<void> {
   const now = Date.now()
@@ -159,7 +159,7 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 1
   }
 }
 
-async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3, timeoutMs = 15000): Promise<Response> {
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2, timeoutMs = 15000): Promise<Response> {
   let lastError: Error | null = null
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -168,23 +168,22 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3,
       const response = await fetchWithTimeout(url, options, timeoutMs)
 
       if (response.status === 429) {
+        // On 429, wait longer and retry only once more
         if (attempt < maxRetries) {
-          const delay = Math.min(2000 * attempt, 8000) // Wait 2s, 4s, 8s
-          console.log(`[v0] Rate limited (429), waiting ${delay}ms before retry ${attempt + 1}/${maxRetries}`)
+          const delay = 5000 // Wait 5 seconds
+          console.log(`[v0] Rate limited (429), waiting ${delay}ms before retry`)
           await new Promise((resolve) => setTimeout(resolve, delay))
           continue
         }
-        // On final attempt, throw error instead of returning broken response
-        throw new Error("Firebase rate limit exceeded after retries")
+        // Return the 429 response to let caller handle it with cache
+        return response
       }
 
       return response
     } catch (error: any) {
       lastError = error
-
       if (attempt < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
-        await new Promise((resolve) => setTimeout(resolve, delay))
+        await new Promise((resolve) => setTimeout(resolve, 2000))
       }
     }
   }
@@ -194,7 +193,7 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3,
 
 // Firestore REST API functions
 export const firestoreREST = {
-  // Get all documents in a collection with pagination support to ensure all data is retrieved
+  // Get all documents in a collection with pagination support
   async getCollection(collectionName: string): Promise<any[]> {
     const cacheKey = getCacheKey("collection", collectionName)
     const cached = getFromCache(cacheKey, CACHE_TTL)
@@ -208,9 +207,8 @@ export const firestoreREST = {
       let nextPageToken: string | null = null
 
       do {
-        // Build URL with pageSize and pageToken
         const params = new URLSearchParams()
-        params.set("pageSize", "1000") // Get up to 1000 documents per request
+        params.set("pageSize", "1000")
         if (apiKeyParam) params.set("key", FIREBASE_CONFIG.apiKey)
         if (nextPageToken) params.set("pageToken", nextPageToken)
 
@@ -222,16 +220,16 @@ export const firestoreREST = {
         })
 
         if (!response.ok) {
-          const cachedOnError = getFromCache(cacheKey, CACHE_TTL * 5) // Extended TTL on error
-          if (cachedOnError) return cachedOnError
-          break
+          const staleCache = cache.get(cacheKey)
+          if (staleCache) {
+            return staleCache.data
+          }
+          return []
         }
 
         const data = await response.json()
         const documents = (data.documents || []).map(firestoreDocToObject)
         allDocuments.push(...documents)
-
-        // Check for next page
         nextPageToken = data.nextPageToken || null
       } while (nextPageToken)
 
@@ -239,8 +237,9 @@ export const firestoreREST = {
       return allDocuments
     } catch (error: any) {
       console.error(`[v0] Error getting collection ${collectionName}:`, error.message)
-      const cachedOnError = getFromCache(cacheKey, CACHE_TTL * 5)
-      if (cachedOnError) return cachedOnError
+      // Return stale cache if available
+      const staleCache = cache.get(cacheKey)
+      if (staleCache) return staleCache.data
       return []
     }
   },
@@ -264,8 +263,9 @@ export const firestoreREST = {
 
       if (!response.ok) {
         if (response.status === 404) return null
-        const cachedOnError = getFromCache(cacheKey, CACHE_TTL * 5)
-        if (cachedOnError) return cachedOnError
+        // Return stale cache on error
+        const staleCache = cache.get(cacheKey)
+        if (staleCache) return staleCache.data
         return null
       }
 
@@ -275,8 +275,8 @@ export const firestoreREST = {
       return result
     } catch (error: any) {
       console.error(`[v0] Error getting document ${collectionName}/${docId}:`, error.message)
-      const cachedOnError = getFromCache(cacheKey, CACHE_TTL * 5)
-      if (cachedOnError) return cachedOnError
+      const staleCache = cache.get(cacheKey)
+      if (staleCache) return staleCache.data
       return null
     }
   },
@@ -301,7 +301,7 @@ export const firestoreREST = {
       if (!response.ok) {
         const errorText = await response.text()
         console.error(`[v0] Firestore SET error: ${response.status}`, errorText)
-        throw new Error(`Failed to set document: ${response.status} - ${errorText}`)
+        throw new Error(`Failed to set document: ${response.status}`)
       }
 
       const result = await response.json()
@@ -339,8 +339,7 @@ export const firestoreREST = {
       )
 
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`[v0] Firestore UPDATE error: ${response.status}`, errorText)
+        console.error(`[v0] Firestore UPDATE error: ${response.status}`)
         return false
       }
 
@@ -412,8 +411,8 @@ export const firestoreREST = {
       })
 
       if (!response.ok) {
-        const cachedOnError = getFromCache(cacheKey, QUERY_CACHE_TTL * 5)
-        if (cachedOnError) return cachedOnError
+        const staleCache = cache.get(cacheKey)
+        if (staleCache) return staleCache.data
         return []
       }
 
@@ -424,8 +423,8 @@ export const firestoreREST = {
       return results
     } catch (error: any) {
       console.error(`[v0] Error querying collection ${collectionName}:`, error.message)
-      const cachedOnError = getFromCache(cacheKey, QUERY_CACHE_TTL * 5)
-      if (cachedOnError) return cachedOnError
+      const staleCache = cache.get(cacheKey)
+      if (staleCache) return staleCache.data
       return []
     }
   },

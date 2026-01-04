@@ -50,8 +50,6 @@ export function NotificationDropdown() {
     } catch (error) {
       console.error("Error loading notifications:", error)
       if (isMounted.current) {
-        setNotifications([])
-        setUnreadCount(0)
         setHasLoaded(true)
         setLoading(false)
       }
@@ -77,13 +75,13 @@ export function NotificationDropdown() {
       if (isMounted.current) {
         loadNotifications()
       }
-    }, 1000)
+    }, 3000)
 
     const interval = setInterval(() => {
       if (isMounted.current && !isLoadingRef.current) {
         loadNotifications()
       }
-    }, 120000)
+    }, 300000) // 5 minutes
 
     return () => {
       isMounted.current = false
