@@ -322,6 +322,11 @@ export default function AdminSalesPage() {
   const getSpvName = (spvId?: string) => {
     if (!spvId) return "-"
     const spv = spvList.find((s) => s.id === spvId)
+    if (!spv && spvId) {
+      // Check if spvId is actually already a name
+      const spvByName = spvList.find((s) => s.namaLengkap === spvId)
+      if (spvByName) return spvByName.namaLengkap
+    }
     return spv?.namaLengkap || "-"
   }
 

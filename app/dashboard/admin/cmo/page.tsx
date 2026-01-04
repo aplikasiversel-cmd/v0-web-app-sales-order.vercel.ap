@@ -84,6 +84,17 @@ export default function AdminCmoPage() {
     }
   }
 
+  const getCmhName = (cmhId?: string) => {
+    if (!cmhId) return "-"
+    const cmh = cmhList.find((c) => c.id === cmhId)
+    // Also search in cmoList in case CMH is not in cmhList yet
+    if (!cmh) {
+      const cmhFromAll = cmoList.find((c) => c.id === cmhId && c.role === "cmh")
+      return cmhFromAll?.namaLengkap || "-"
+    }
+    return cmh?.namaLengkap || "-"
+  }
+
   const filteredCmo = cmoList.filter(
     (c) =>
       c.namaLengkap.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -321,7 +332,7 @@ export default function AdminCmoPage() {
                           <TableCell>
                             <Badge variant={cmo.role === "cmh" ? "default" : "secondary"}>{formatRole(cmo.role)}</Badge>
                           </TableCell>
-                          <TableCell>{cmo.role === "cmo" ? cmo.cmhName || "-" : "-"}</TableCell>
+                          <TableCell>{cmo.role === "cmo" ? cmo.cmhName || getCmhName(cmo.cmhId) : "-"}</TableCell>
                           <TableCell>
                             <Badge variant={cmo.isActive ? "default" : "outline"}>
                               {cmo.isActive ? "Aktif" : "Nonaktif"}
