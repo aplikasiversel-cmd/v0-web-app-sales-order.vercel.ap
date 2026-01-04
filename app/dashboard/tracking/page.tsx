@@ -195,9 +195,9 @@ export default function TrackingPage() {
       createdAt: new Date().toISOString(),
     }
 
+    await orderStore.addNote(order.id, newNote)
     await orderStore.update(order.id, {
       status: newStatus,
-      notes: [...order.notes, newNote],
     })
     await loadOrders()
   }

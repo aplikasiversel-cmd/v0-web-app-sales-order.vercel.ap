@@ -109,45 +109,37 @@ export default function AdminSalesPage() {
   }, [spvList, editFormData.merk, editFormData.dealer])
 
   useEffect(() => {
-    loadSales()
-    loadDealersAndMerks()
-  }, [])
+    const fetchData = async () => {
+      setIsLoading(true)
+      try {
+        const salesData = await userStore.getByRole("sales")
+        setSalesList(salesData)
 
-  const loadSales = async () => {
-    setIsLoading(true)
-    try {
-      const [users, allUsers] = await Promise.all([userStore.getByRole("sales"), userStore.getAll()])
-      setSalesList(Array.isArray(users) ? users : [])
-      if (Array.isArray(allUsers)) {
-        setSpvList(allUsers.filter((u) => u.role === "spv" && u.isActive))
-      }
-    } catch (error) {
-      console.error("Error loading sales:", error)
-      setSalesList([])
-    }
-    setIsLoading(false)
-  }
+        const spvData = await userStore.getByRole("spv")
+        setSpvList(spvData)
 
-  const loadDealersAndMerks = async () => {
-    try {
-      const dealers = await dealerStore.getAll()
-      setDbDealers(Array.isArray(dealers) ? dealers : [])
+        const dealers = await dealerStore.getAll()
+        setDbDealers(Array.isArray(dealers) ? dealers : [])
 
-      if (typeof window !== "undefined") {
-        const storedMerks = localStorage.getItem("muf_custom_merks")
-        if (storedMerks) {
-          try {
-            const parsed = JSON.parse(storedMerks)
-            setCustomMerks(Array.isArray(parsed) ? parsed : [])
-          } catch {
-            setCustomMerks([])
+        if (typeof window !== "undefined") {
+          const storedMerks = localStorage.getItem("muf_custom_merks")
+          if (storedMerks) {
+            try {
+              const parsed = JSON.parse(storedMerks)
+              setCustomMerks(Array.isArray(parsed) ? parsed : [])
+            } catch {
+              setCustomMerks([])
+            }
           }
         }
+      } catch (error) {
+        console.error("Error fetching data:", error)
+      } finally {
+        setIsLoading(false)
       }
-    } catch (error) {
-      console.error("Error loading dealers:", error)
     }
-  }
+    fetchData()
+  }, [])
 
   const filteredSales = salesList.filter(
     (s) =>
@@ -233,7 +225,9 @@ export default function AdminSalesPage() {
       })
 
       setShowAddDialog(false)
-      loadSales()
+      // Fetch updated sales list after adding a new sales
+      const salesData = await userStore.getByRole("sales")
+      setSalesList(salesData)
     } catch (error) {
       console.error("Error adding sales:", error)
       toast({
@@ -282,7 +276,9 @@ export default function AdminSalesPage() {
       })
 
       setShowEditDialog(false)
-      loadSales()
+      // Fetch updated sales list after editing a sales
+      const salesData = await userStore.getByRole("sales")
+      setSalesList(salesData)
     } catch (error) {
       console.error("Error updating sales:", error)
       toast({
@@ -308,7 +304,9 @@ export default function AdminSalesPage() {
       })
 
       setShowDeleteDialog(false)
-      loadSales()
+      // Fetch updated sales list after deleting a sales
+      const salesData = await userStore.getByRole("sales")
+      setSalesList(salesData)
     } catch (error) {
       console.error("Error deleting sales:", error)
       toast({
@@ -319,6 +317,12 @@ export default function AdminSalesPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const getSpvName = (spvId?: string) => {
+    if (!spvId) return "-"
+    const spv = spvList.find((s) => s.id === spvId)
+    return spv?.namaLengkap || "-"
   }
 
   return (
@@ -382,7 +386,7 @@ export default function AdminSalesPage() {
                           <TableCell>{sales.namaLengkap}</TableCell>
                           <TableCell>{getScalarMerk(sales.merk) || "-"}</TableCell>
                           <TableCell className="max-w-[200px] truncate">{sales.dealer || "-"}</TableCell>
-                          <TableCell>{sales.spvName || "-"}</TableCell>
+                          <TableCell>{sales.spvName || getSpvName(sales.spvId) || "-"}</TableCell>
                           <TableCell>
                             <Badge variant={sales.isActive ? "default" : "outline"}>
                               {sales.isActive ? "Aktif" : "Nonaktif"}

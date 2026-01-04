@@ -223,7 +223,27 @@ export async function deleteProgram(id: string) {
 // ==================== ORDERS ====================
 
 export async function getOrders() {
-  return await firestoreREST.getCollection(COLLECTIONS.ORDERS)
+  const orders = await firestoreREST.getCollection(COLLECTIONS.ORDERS)
+  const allNotes = await firestoreREST.getCollection(COLLECTIONS.ORDER_NOTES)
+
+  // Map notes to orders
+  return orders.map((order: any) => {
+    const orderNotes = allNotes.filter((n: any) => n.orderId === order.id)
+    // Sort notes by createdAt ascending
+    orderNotes.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    return {
+      ...order,
+      notes: orderNotes.map((n: any) => ({
+        id: n.id,
+        userId: n.userId,
+        userName: n.userName,
+        role: n.role,
+        note: n.note,
+        status: n.status,
+        createdAt: n.createdAt,
+      })),
+    }
+  })
 }
 
 export async function getOrderById(id: string) {
@@ -246,7 +266,7 @@ export async function createOrder(orderData: Record<string, any>) {
     fotoKtpNasabah: orderData.fotoKtpNasabah || null,
     namaPasangan: orderData.namaPasangan || null,
     fotoKtpPasangan: orderData.fotoKtpPasangan || null,
-    fotoKK: orderData.fotoKK || null,
+    fotoKk: orderData.fotoKk || orderData.fotoKK || null,
     noHp: orderData.noHp,
     typeUnit: orderData.typeUnit,
     merk: orderData.merk,
@@ -284,7 +304,7 @@ export async function updateOrder(id: string, updates: Record<string, any>) {
     "fotoKtpNasabah",
     "namaPasangan",
     "fotoKtpPasangan",
-    "fotoKK",
+    "fotoKk",
     "noHp",
     "typeUnit",
     "merk",
@@ -304,6 +324,7 @@ export async function updateOrder(id: string, updates: Record<string, any>) {
     "fotoSurvey",
     "claimedBy",
     "claimedAt",
+    "checklist",
     "checklistKtpPemohon",
     "checklistKtpPasangan",
     "checklistKartuKeluarga",
@@ -317,6 +338,27 @@ export async function updateOrder(id: string, updates: Record<string, any>) {
   for (const field of allowedFields) {
     if (updates[field] !== undefined) {
       updateData[field] = updates[field]
+    }
+  }
+
+  if (updates.notes && Array.isArray(updates.notes)) {
+    // Get existing notes for this order
+    const existingNotes = await firestoreREST.queryCollection(COLLECTIONS.ORDER_NOTES, "orderId", "==", id)
+    const existingNoteIds = new Set(existingNotes.map((n: any) => n.id))
+
+    // Add only new notes
+    for (const note of updates.notes) {
+      if (!existingNoteIds.has(note.id)) {
+        await firestoreREST.setDocument(COLLECTIONS.ORDER_NOTES, note.id, {
+          orderId: id,
+          userId: note.userId,
+          userName: note.userName,
+          role: note.role,
+          note: note.note,
+          status: note.status,
+          createdAt: note.createdAt,
+        })
+      }
     }
   }
 
