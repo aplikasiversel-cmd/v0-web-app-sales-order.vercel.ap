@@ -10,14 +10,11 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  Clock,
-  Calendar,
-  Camera,
   Upload,
-  Edit,
   Loader2,
-  Download,
   FileText,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { DashboardHeader } from "@/components/dashboard/header"
 import { OrderTimeline } from "@/components/dashboard/order-timeline"
@@ -38,6 +35,8 @@ import { formatRupiah, formatTanggalWaktu } from "@/lib/utils/format"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
 import { notifySlikOrDecision } from "@/app/actions/notification-actions"
+
+const ITEMS_PER_PAGE = 5
 
 const STATUS_LIST: OrderStatus[] = [
   "Baru",
@@ -113,6 +112,7 @@ export default function TrackingPage() {
   const [fotoSurvey, setFotoSurvey] = useState<string[]>([])
   const [isUploadingFoto, setIsUploadingFoto] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
     loadOrders()
@@ -128,7 +128,15 @@ export default function TrackingPage() {
         } else if (user.role === "cmo") {
           const allOrders = await orderStore.getAll()
           const ordersArray = Array.isArray(allOrders) ? allOrders : []
-          const filteredByCmo = ordersArray.filter((o) => o.cmoId === user.id)
+          const filteredByCmo = ordersArray.filter((o) => {
+            // Match by ID
+            if (o.cmoId === user.id) return true
+            // Match by username (some orders may store username as cmoId)
+            if (o.cmoId === user.username) return true
+            // Match by name
+            if (o.cmoName && o.cmoName.toUpperCase() === user.namaLengkap.toUpperCase()) return true
+            return false
+          })
           setOrders(filteredByCmo)
         } else {
           const allOrders = await orderStore.getAll()
@@ -166,7 +174,14 @@ export default function TrackingPage() {
     filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
     setFilteredOrders(filtered)
+    setCurrentPage(1)
   }, [orders, searchQuery, statusFilter])
+
+  const totalOrders = filteredOrders.length
+  const totalPages = Math.ceil(totalOrders / ITEMS_PER_PAGE)
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = startIndex + ITEMS_PER_PAGE
+  const paginatedOrders = filteredOrders.slice(startIndex, endIndex)
 
   const getStatusBadge = (status: OrderStatus) => {
     const styles: Record<OrderStatus, string> = {
@@ -198,292 +213,225 @@ export default function TrackingPage() {
     await orderStore.addNote(order.id, newNote)
     await orderStore.update(order.id, {
       status: newStatus,
+      updatedAt: new Date().toISOString(),
     })
+
     await loadOrders()
   }
 
   const handleClaim = async (order: Order) => {
     if (!user) return
-    await addNote(order, `Order di-claim oleh ${user.namaLengkap}`, "Claim")
-    toast({ title: "Berhasil", description: "Order berhasil di-claim" })
+    try {
+      await orderStore.update(order.id, {
+        claimedBy: user.id,
+        claimedAt: new Date().toISOString(),
+        status: "Claim",
+        updatedAt: new Date().toISOString(),
+      })
+      await addNote(order, `Order di-claim oleh ${user.namaLengkap}`, "Claim")
+      toast({ title: "Berhasil", description: "Order berhasil di-claim" })
+    } catch (error) {
+      console.error("Error claiming order:", error)
+      toast({ title: "Error", description: "Gagal meng-claim order", variant: "destructive" })
+    }
   }
 
-  const handleCekSlik = async (order: Order) => {
+  const handleProcess = (order: Order) => {
     setSelectedOrder(order)
+    setHasilSlik("")
     setShowProcessDialog(true)
   }
 
-  const handleStartSlikCheck = async (order: Order) => {
-    await addNote(order, "Proses pengecekan SLIK dimulai", "Cek Slik")
-    toast({ title: "Berhasil", description: "Order dipindahkan ke tahap Cek SLIK" })
-  }
-
-  const handleSlikResult = async (decision: "Proses" | "Pertimbangkan" | "Reject") => {
-    if (!selectedOrder || !hasilSlik || !user) return
-
-    const noteText = `Hasil SLIK: ${hasilSlik}. Keputusan: ${decision}`
-    await addNote(selectedOrder, noteText, decision === "Proses" ? "Proses" : decision)
-
-    if (decision === "Proses") {
-      await orderStore.update(selectedOrder.id, { hasilSlik })
-    }
-
-    await notifySlikOrDecision(
-      selectedOrder.id,
-      selectedOrder.namaNasabah,
-      selectedOrder.salesId,
-      user.namaLengkap,
-      user.id,
-      "slik_result",
-      hasilSlik,
-    )
-
-    setHasilSlik("")
-    setShowProcessDialog(false)
-    toast({ title: "Berhasil", description: `Order berhasil diproses: ${decision}` })
-  }
-
-  const handleSetSurveyDate = async () => {
-    if (!selectedOrder || !tanggalSurvey) return
-
-    // Save survey date and checklist
-    await orderStore.update(selectedOrder.id, {
-      tanggalSurvey,
-      checklist,
-    })
-
-    await addNote(selectedOrder, `Tanggal survey ditetapkan: ${tanggalSurvey}`, "Proses")
-
-    // Don't reset checklist, keep dialog open for foto upload
-    toast({ title: "Berhasil", description: "Tanggal survey dan checklist dokumen berhasil disimpan" })
-
-    // Refresh selected order
-    const updatedOrder = await orderStore.getById(selectedOrder.id)
-    if (updatedOrder) {
-      setSelectedOrder(updatedOrder)
-    }
-    await loadOrders()
-  }
-
-  const handleFotoSurveyUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files) return
-
-    setIsUploadingFoto(true)
-
-    const processFile = (file: File): Promise<string> => {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = (event) => {
-          if (event.target?.result) {
-            // Compress image if it's too large
-            const img = new Image()
-            img.onload = () => {
-              const canvas = document.createElement("canvas")
-              const maxWidth = 800
-              const maxHeight = 600
-              let { width, height } = img
-
-              if (width > maxWidth || height > maxHeight) {
-                const ratio = Math.min(maxWidth / width, maxHeight / height)
-                width *= ratio
-                height *= ratio
-              }
-
-              canvas.width = width
-              canvas.height = height
-              const ctx = canvas.getContext("2d")
-              ctx?.drawImage(img, 0, 0, width, height)
-
-              // Compress to JPEG with quality 0.7
-              const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.7)
-              resolve(compressedDataUrl)
-            }
-            img.onerror = reject
-            img.src = event.target.result as string
-          }
-        }
-        reader.onerror = reject
-        reader.readAsDataURL(file)
-      })
-    }
-
-    Promise.all(Array.from(files).map(processFile))
-      .then((compressedImages) => {
-        setFotoSurvey((prev) => [...prev, ...compressedImages])
-        setIsUploadingFoto(false)
-      })
-      .catch((error) => {
-        console.error("Error processing images:", error)
-        setIsUploadingFoto(false)
-        toast({
-          title: "Error",
-          description: "Gagal memproses gambar",
-          variant: "destructive",
-        })
-      })
-  }
-
-  const handleSaveFotoSurvey = async () => {
-    if (!selectedOrder || fotoSurvey.length === 0) return
-
-    setIsUploadingFoto(true)
-
+  const handleSubmitSlik = async () => {
+    if (!selectedOrder || !hasilSlik) return
     try {
       await orderStore.update(selectedOrder.id, {
-        fotoSurvey,
+        hasilSlik,
+        status: "Cek Slik",
+        updatedAt: new Date().toISOString(),
       })
+      await addNote(selectedOrder, `Hasil SLIK: ${hasilSlik}`, "Cek Slik")
 
-      await addNote(selectedOrder, `Foto survey diupload (${fotoSurvey.length} foto)`, "Proses")
-      toast({ title: "Berhasil", description: "Foto survey berhasil disimpan. Order dapat di Map In." })
-
-      // Refresh
-      const updatedOrder = await orderStore.getById(selectedOrder.id)
-      if (updatedOrder) {
-        setSelectedOrder(updatedOrder)
+      // Notify Sales
+      try {
+        await notifySlikOrDecision({
+          orderId: selectedOrder.id,
+          namaNasabah: selectedOrder.namaNasabah,
+          salesId: selectedOrder.salesId,
+          type: "slik",
+          result: hasilSlik,
+        })
+      } catch (notifError) {
+        console.error("Notification error:", notifError)
       }
-      await loadOrders()
+
+      setShowProcessDialog(false)
+      toast({ title: "Berhasil", description: "Hasil SLIK berhasil disimpan" })
     } catch (error) {
-      console.error("Error saving foto survey:", error)
-      toast({
-        title: "Error",
-        description: "Gagal menyimpan foto survey. Silakan coba lagi.",
-        variant: "destructive",
-      })
+      console.error("Error submitting SLIK:", error)
+      toast({ title: "Error", description: "Gagal menyimpan hasil SLIK", variant: "destructive" })
+    }
+  }
+
+  const handleSurvey = (order: Order) => {
+    setSelectedOrder(order)
+    setTanggalSurvey("")
+    setChecklist({
+      ktpPemohon: order.checklist?.ktpPemohon || false,
+      ktpPasangan: order.checklist?.ktpPasangan || false,
+      kartuKeluarga: order.checklist?.kartuKeluarga || false,
+      npwp: order.checklist?.npwp || false,
+      bkr: order.checklist?.bkr || false,
+      livin: order.checklist?.livin || false,
+      rekTabungan: order.checklist?.rekTabungan || false,
+      mufApp: order.checklist?.mufApp || false,
+    })
+    setFotoSurvey(order.fotoSurvey || [])
+    setShowSurveyDialog(true)
+  }
+
+  const handleUploadFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    setIsUploadingFoto(true)
+    try {
+      const newPhotos: string[] = []
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        const reader = new FileReader()
+        const base64 = await new Promise<string>((resolve) => {
+          reader.onload = () => resolve(reader.result as string)
+          reader.readAsDataURL(file)
+        })
+        newPhotos.push(base64)
+      }
+      setFotoSurvey((prev) => [...prev, ...newPhotos])
+    } catch (error) {
+      console.error("Error uploading photos:", error)
+      toast({ title: "Error", description: "Gagal mengupload foto", variant: "destructive" })
     } finally {
       setIsUploadingFoto(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
     }
   }
 
-  const handleMapIn = async (order: Order) => {
-    if (!order.fotoSurvey || order.fotoSurvey.length === 0) {
-      toast({
-        title: "Tidak dapat Map In",
-        description: "Upload foto survey terlebih dahulu",
-        variant: "destructive",
+  const handleSubmitSurvey = async () => {
+    if (!selectedOrder || !tanggalSurvey) return
+    try {
+      await orderStore.update(selectedOrder.id, {
+        tanggalSurvey,
+        checklist,
+        fotoSurvey,
+        status: "Proses",
+        updatedAt: new Date().toISOString(),
       })
-      return
+      await addNote(selectedOrder, `Survey dijadwalkan: ${tanggalSurvey}`, "Proses")
+      setShowSurveyDialog(false)
+      toast({ title: "Berhasil", description: "Data survey berhasil disimpan" })
+    } catch (error) {
+      console.error("Error submitting survey:", error)
+      toast({ title: "Error", description: "Gagal menyimpan data survey", variant: "destructive" })
     }
-
-    await addNote(order, "Order masuk ke Map In - menunggu keputusan final", "Map In")
-    setShowSurveyDialog(false)
-    toast({ title: "Berhasil", description: "Order berhasil masuk Map In. Silakan pilih Approve atau Reject." })
   }
 
-  const openMapInDecisionDialog = (order: Order) => {
+  const handleCmhDecision = (order: Order) => {
+    setSelectedOrder(order)
+    setCmhNote("")
+    setShowCmhDialog(true)
+  }
+
+  const handleSubmitCmhDecision = async (decision: "Approve" | "Reject" | "Pertimbangkan") => {
+    if (!selectedOrder) return
+    try {
+      const newStatus = decision
+      await orderStore.update(selectedOrder.id, {
+        status: newStatus,
+        updatedAt: new Date().toISOString(),
+      })
+      await addNote(selectedOrder, `Keputusan CMH: ${decision}. ${cmhNote}`, newStatus)
+
+      // Notify Sales about decision
+      try {
+        await notifySlikOrDecision({
+          orderId: selectedOrder.id,
+          namaNasabah: selectedOrder.namaNasabah,
+          salesId: selectedOrder.salesId,
+          type: "decision",
+          result: decision,
+        })
+      } catch (notifError) {
+        console.error("Notification error:", notifError)
+      }
+
+      setShowCmhDialog(false)
+      toast({ title: "Berhasil", description: `Order berhasil di-${decision.toLowerCase()}` })
+    } catch (error) {
+      console.error("Error submitting CMH decision:", error)
+      toast({ title: "Error", description: "Gagal menyimpan keputusan", variant: "destructive" })
+    }
+  }
+
+  const handleMapInDecision = (order: Order) => {
     setSelectedOrder(order)
     setMapInDecisionNote("")
     setShowMapInDecisionDialog(true)
   }
 
-  const handleMapInDecision = async (decision: "Approve" | "Reject") => {
-    if (!selectedOrder || !user) return
-
-    const noteText = `Keputusan Final: ${decision}${mapInDecisionNote ? `. Catatan: ${mapInDecisionNote}` : ""}`
-    await addNote(selectedOrder, noteText, decision)
-
-    await notifySlikOrDecision(
-      selectedOrder.id,
-      selectedOrder.namaNasabah,
-      selectedOrder.salesId,
-      user.namaLengkap,
-      user.id,
-      decision === "Approve" ? "order_approve" : "order_reject",
-      mapInDecisionNote,
-    )
-
-    setMapInDecisionNote("")
-    setShowMapInDecisionDialog(false)
-    toast({ title: "Berhasil", description: `Order ${decision === "Approve" ? "disetujui" : "ditolak"}` })
-  }
-
-  const handleFinalDecision = async (order: Order, decision: "Approve" | "Reject", note: string) => {
-    if (!user) return
-    await addNote(order, `Keputusan Final: ${decision}. ${note}`, decision)
-
-    await notifySlikOrDecision(
-      order.id,
-      order.namaNasabah,
-      order.salesId,
-      user.namaLengkap,
-      user.id,
-      decision === "Approve" ? "order_approve" : "order_reject",
-      note,
-    )
-
-    toast({ title: "Berhasil", description: `Order ${decision === "Approve" ? "disetujui" : "ditolak"}` })
-  }
-
-  const handleBanding = async () => {
-    if (!selectedOrder || !user || !bandingNote) return
-
-    const newNote = {
-      id: generateId(),
-      userId: user.id,
-      userName: user.namaLengkap,
-      role: user.role,
-      note: `BANDING: ${bandingNote}`,
-      status: selectedOrder.status,
-      createdAt: new Date().toISOString(),
+  const handleSubmitMapIn = async () => {
+    if (!selectedOrder) return
+    try {
+      await orderStore.update(selectedOrder.id, {
+        status: "Map In",
+        updatedAt: new Date().toISOString(),
+      })
+      await addNote(selectedOrder, `Order masuk Map In. ${mapInDecisionNote}`, "Map In")
+      setShowMapInDecisionDialog(false)
+      toast({ title: "Berhasil", description: "Order berhasil masuk Map In" })
+    } catch (error) {
+      console.error("Error submitting Map In:", error)
+      toast({ title: "Error", description: "Gagal update status", variant: "destructive" })
     }
-
-    await orderStore.update(selectedOrder.id, {
-      notes: [...selectedOrder.notes, newNote],
-    })
-
-    setBandingNote("")
-    setShowBandingDialog(false)
-    await loadOrders()
-    toast({ title: "Berhasil", description: "Banding berhasil diajukan" })
   }
 
-  const handleCmhDecision = async (decision: "Lanjut" | "Reject") => {
-    if (!selectedOrder || !user) return
-
-    const newStatus = decision === "Lanjut" ? "Proses" : "Reject"
-    const noteText = `CMH Decision: ${decision}${cmhNote ? `. Catatan: ${cmhNote}` : ""}`
-    await addNote(selectedOrder, noteText, newStatus)
-
-    setCmhNote("")
-    setShowCmhDialog(false)
-    toast({ title: "Berhasil", description: `Order ${decision === "Lanjut" ? "dilanjutkan" : "ditolak"} oleh CMH` })
+  const handleSubmitBanding = async () => {
+    if (!selectedOrder || !bandingNote) return
+    try {
+      await orderStore.update(selectedOrder.id, {
+        status: "Pertimbangkan",
+        updatedAt: new Date().toISOString(),
+      })
+      await addNote(selectedOrder, `Banding diajukan: ${bandingNote}`, "Pertimbangkan")
+      setShowBandingDialog(false)
+      toast({ title: "Berhasil", description: "Banding berhasil diajukan" })
+    } catch (error) {
+      console.error("Error submitting banding:", error)
+      toast({ title: "Error", description: "Gagal mengajukan banding", variant: "destructive" })
+    }
   }
 
-  const openSurveyDialog = async (order: Order) => {
+  const getStatusCount = (status: OrderStatus) => orders.filter((o) => o.status === status).length
+
+  const canClaim = (order: Order) => user?.role === "cmo" && order.status === "Baru" && !order.claimedBy
+  const canProcess = (order: Order) => user?.role === "cmo" && order.status === "Claim" && order.claimedBy === user?.id
+  const canSurvey = (order: Order) =>
+    user?.role === "cmo" && order.status === "Cek Slik" && order.claimedBy === user?.id
+  const canMapIn = (order: Order) => user?.role === "cmo" && order.status === "Proses" && order.claimedBy === user?.id
+  const canCmhDecide = (order: Order) => user?.role === "cmh" && order.status === "Map In"
+  const canBanding = (order: Order) => user?.role === "sales" && order.status === "Reject"
+
+  const handleViewDetail = (order: Order) => {
     setSelectedOrder(order)
-    setTanggalSurvey(order.tanggalSurvey || "")
-    setChecklist(
-      order.checklist || {
-        ktpPemohon: false,
-        ktpPasangan: false,
-        kartuKeluarga: false,
-        npwp: false,
-        bkr: false,
-        livin: false,
-        rekTabungan: false,
-        mufApp: false,
-      },
-    )
-    setFotoSurvey(order.fotoSurvey || [])
-    setShowSurveyDialog(true)
+    setShowDetailDialog(true)
   }
 
-  const handleDownloadFile = (dataUrl: string, filename: string) => {
-    const link = document.createElement("a")
-    link.href = dataUrl
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    toast({ title: "Berhasil", description: `File ${filename} berhasil didownload` })
+  const handleBanding = (order: Order) => {
+    setSelectedOrder(order)
+    setBandingNote("")
+    setShowBandingDialog(true)
   }
-
-  const isSales = user?.role === "sales"
-  const isSPV = user?.role === "spv" // Added isSPV
-  const isCMO = user?.role === "cmo"
-  const isCMH = user?.role === "cmh"
-  const isAdmin = user?.role === "admin" // <-- Added isAdmin check
-  const canDownloadFiles = isSales || isSPV || isCMO || isCMH || isAdmin // <-- Updated canDownloadFiles
 
   if (!user) return null
 
@@ -492,7 +440,7 @@ export default function TrackingPage() {
       <div className="flex flex-col min-h-screen">
         <DashboardHeader
           title="Tracking Order"
-          description={isSales ? "Lacak status order Anda" : "Kelola dan proses semua order"}
+          description={user.role === "sales" ? "Lacak status order Anda" : "Kelola dan proses semua order"}
         />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -505,47 +453,35 @@ export default function TrackingPage() {
     <div className="flex flex-col min-h-screen">
       <DashboardHeader
         title="Tracking Order"
-        description={isSales ? "Lacak status order Anda" : "Kelola dan proses semua order"}
+        description={user.role === "sales" ? "Lacak status order Anda" : "Kelola dan proses semua order"}
       />
 
-      <div className="flex-1 p-4 lg:p-6 space-y-6">
-        {/* Status Summary for CMO/CMH */}
-        {(isCMO || isCMH || isAdmin) && ( // <-- Show for Admin too
-          <div className="grid grid-cols-4 lg:grid-cols-8 gap-2">
-            {STATUS_LIST.map((status) => {
-              const count = orders.filter((o) => o.status === status).length
-              return (
-                <button
-                  key={status}
-                  onClick={() => setStatusFilter(statusFilter === status ? "all" : status)}
-                  className={cn(
-                    "p-2 rounded-lg text-center transition-colors",
-                    statusFilter === status ? "bg-primary text-primary-foreground" : "bg-muted/50 hover:bg-muted",
-                  )}
-                >
-                  <p className="text-lg font-bold">{count}</p>
-                  <p className="text-xs truncate">{status}</p>
-                </button>
-              )
-            })}
-          </div>
-        )}
+      <div className="flex-1 p-4 lg:p-6 space-y-6 overflow-y-auto">
+        {/* Status Summary */}
+        <div className="grid grid-cols-4 lg:grid-cols-8 gap-2">
+          {STATUS_LIST.map((status) => (
+            <div key={status} className="text-center p-2 md:p-3 rounded-lg bg-muted/50">
+              <p className="text-lg md:text-xl font-bold">{getStatusCount(status)}</p>
+              <p className="text-[10px] md:text-xs text-muted-foreground truncate">{status}</p>
+            </div>
+          ))}
+        </div>
 
         {/* Filters */}
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="pt-6">
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder={isSales ? "Cari nasabah, unit, atau merk..." : "Cari nasabah, sales, unit..."}
+                  placeholder="Cari nasabah, sales, unit..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9"
                 />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full sm:w-48">
+                <SelectTrigger className="w-full sm:w-40">
                   <Filter className="h-4 w-4 mr-2" />
                   <SelectValue placeholder="Filter Status" />
                 </SelectTrigger>
@@ -562,175 +498,121 @@ export default function TrackingPage() {
           </CardContent>
         </Card>
 
-        {/* Orders Table - Updated with smooth UI and name columns */}
-        <Card className="transition-all duration-200 hover:shadow-md">
-          <CardHeader className="pb-3">
+        {/* Orders Table */}
+        <Card>
+          <CardHeader>
             <CardTitle>Daftar Order</CardTitle>
-            <CardDescription>{filteredOrders.length} order ditemukan</CardDescription>
+            <CardDescription>
+              {totalOrders > 0
+                ? `Menampilkan ${startIndex + 1} - ${Math.min(endIndex, totalOrders)} dari ${totalOrders} order`
+                : `${totalOrders} order ditemukan`}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {filteredOrders.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
+            {loading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : paginatedOrders.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
                 <p>Tidak ada order ditemukan</p>
               </div>
             ) : (
-              <div className="rounded-lg border overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nasabah</TableHead>
-                      {(isCMO || isCMH || isAdmin) && <TableHead className="hidden md:table-cell">Sales</TableHead>}
-                      {(isSales || isAdmin) && <TableHead className="hidden md:table-cell">CMO</TableHead>}
-                      <TableHead>Unit</TableHead>
-                      <TableHead className="hidden md:table-cell">OTR</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Aksi</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredOrders.map((order) => (
-                      <TableRow key={order.id} className="transition-colors hover:bg-muted/50">
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{order.namaNasabah}</p>
-                            <p className="text-xs text-muted-foreground">{order.noHp}</p>
-                            <div className="md:hidden mt-1 space-y-0.5">
-                              {(isCMO || isCMH || isAdmin) && order.salesName && (
-                                <p className="text-xs text-blue-600">Sales: {order.salesName}</p>
+              <>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nasabah</TableHead>
+                        <TableHead>Unit</TableHead>
+                        <TableHead>Sales</TableHead>
+                        <TableHead>CMO</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Tanggal</TableHead>
+                        <TableHead className="text-right">Aksi</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedOrders.map((order) => (
+                        <TableRow key={order.id}>
+                          <TableCell className="font-medium">{order.namaNasabah}</TableCell>
+                          <TableCell>
+                            {order.merk} - {order.typeUnit}
+                          </TableCell>
+                          <TableCell>{order.salesName}</TableCell>
+                          <TableCell>{order.cmoName || "-"}</TableCell>
+                          <TableCell>{getStatusBadge(order.status)}</TableCell>
+                          <TableCell>{formatTanggalWaktu(order.createdAt)}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => handleViewDetail(order)}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              {canClaim(order) && (
+                                <Button variant="outline" size="sm" onClick={() => handleClaim(order)}>
+                                  Claim
+                                </Button>
                               )}
-                              {(isSales || isAdmin) && order.cmoName && (
-                                <p className="text-xs text-green-600">CMO: {order.cmoName}</p>
+                              {canProcess(order) && (
+                                <Button variant="outline" size="sm" onClick={() => handleProcess(order)}>
+                                  Cek SLIK
+                                </Button>
+                              )}
+                              {canSurvey(order) && (
+                                <Button variant="outline" size="sm" onClick={() => handleSurvey(order)}>
+                                  Survey
+                                </Button>
+                              )}
+                              {canMapIn(order) && (
+                                <Button variant="outline" size="sm" onClick={() => handleMapInDecision(order)}>
+                                  Map In
+                                </Button>
+                              )}
+                              {canCmhDecide(order) && (
+                                <Button variant="outline" size="sm" onClick={() => handleCmhDecision(order)}>
+                                  Keputusan
+                                </Button>
+                              )}
+                              {canBanding(order) && (
+                                <Button variant="outline" size="sm" onClick={() => handleBanding(order)}>
+                                  Banding
+                                </Button>
                               )}
                             </div>
-                          </div>
-                        </TableCell>
-                        {(isCMO || isCMH || isAdmin) && (
-                          <TableCell className="hidden md:table-cell">
-                            <p className="text-sm">{order.salesName || "-"}</p>
                           </TableCell>
-                        )}
-                        {(isSales || isAdmin) && (
-                          <TableCell className="hidden md:table-cell">
-                            <p className="text-sm">{order.cmoName || "-"}</p>
-                          </TableCell>
-                        )}
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{order.typeUnit}</p>
-                            <p className="text-xs text-muted-foreground">{order.merk}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell">{formatRupiah(order.otr)}</TableCell>
-                        <TableCell>{getStatusBadge(order.status)}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => {
-                                setSelectedOrder(order)
-                                setShowDetailDialog(true)
-                              }}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
 
-                            {/* CMO Actions */}
-                            {isCMO && order.status === "Baru" && (
-                              <Button variant="ghost" size="icon" onClick={() => handleClaim(order)}>
-                                <CheckCircle2 className="h-4 w-4 text-green-500" />
-                              </Button>
-                            )}
-                            {isCMO && order.status === "Claim" && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Mulai Cek SLIK"
-                                onClick={() => handleStartSlikCheck(order)}
-                              >
-                                <Clock className="h-4 w-4 text-orange-500" />
-                              </Button>
-                            )}
-                            {isCMO && order.status === "Cek Slik" && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Input Hasil SLIK"
-                                onClick={() => handleCekSlik(order)}
-                              >
-                                <FileText className="h-4 w-4 text-blue-500" />
-                              </Button>
-                            )}
-                            {isCMO && order.status === "Proses" && (
-                              <Button variant="ghost" size="icon" onClick={() => openSurveyDialog(order)}>
-                                <Calendar className="h-4 w-4 text-cyan-500" />
-                              </Button>
-                            )}
-                            {isCMO && order.status === "Map In" && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title="Edit Survey"
-                                  onClick={() => openSurveyDialog(order)}
-                                >
-                                  <Edit className="h-4 w-4 text-blue-500" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title="Keputusan Final"
-                                  onClick={() => openMapInDecisionDialog(order)}
-                                >
-                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                                </Button>
-                              </>
-                            )}
-
-                            {/* CMH Actions for Pertimbangkan */}
-                            {isCMH && order.status === "Pertimbangkan" && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => {
-                                  setSelectedOrder(order)
-                                  setShowCmhDialog(true)
-                                }}
-                              >
-                                <AlertTriangle className="h-4 w-4 text-amber-500" />
-                              </Button>
-                            )}
-                            {isCMH && order.status === "Cek Slik" && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Input Hasil SLIK"
-                                onClick={() => handleCekSlik(order)}
-                              >
-                                <FileText className="h-4 w-4 text-blue-500" />
-                              </Button>
-                            )}
-
-                            {/* Sales Banding */}
-                            {isSales && order.status === "Reject" && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => {
-                                  setSelectedOrder(order)
-                                  setShowBandingDialog(true)
-                                }}
-                              >
-                                <AlertTriangle className="h-4 w-4 text-amber-500" />
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Sebelumnya
+                    </Button>
+                    <span className="text-sm text-muted-foreground px-2">
+                      Halaman {currentPage} dari {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Selanjutnya
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -743,565 +625,206 @@ export default function TrackingPage() {
             <DialogTitle>Detail Order</DialogTitle>
             <DialogDescription>Informasi lengkap order</DialogDescription>
           </DialogHeader>
-
           {selectedOrder && (
-            <div className="space-y-6">
-              {/* use getPassedStatuses to determine current status for OrderTimeline */}
-              <OrderTimeline
-                currentStatus={selectedOrder.status}
-                passedStatuses={getPassedStatuses(selectedOrder.status)}
-              />
-
-              <div className="flex items-center justify-between">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">ID Order</p>
-                  <p className="font-mono text-sm">{selectedOrder.id}</p>
-                </div>
-                {getStatusBadge(selectedOrder.status)}
-              </div>
-
-              <div className="bg-muted/30 rounded-lg p-4">
-                <p className="text-sm font-medium mb-3">Riwayat Status</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {(() => {
-                    const timestamps =
-                      selectedOrder.notes && selectedOrder.notes.length > 0
-                        ? getStatusTimestamps(selectedOrder.notes)
-                        : {}
-                    const passedStatuses = getPassedStatuses(selectedOrder.status)
-
-                    return passedStatuses.map((status) => {
-                      // Get timestamp from notes or use createdAt for Baru
-                      const time = status === "Baru" ? selectedOrder.createdAt : timestamps[status]
-                      return (
-                        <div key={status} className="text-center p-2 rounded bg-background border">
-                          <p className="text-xs font-medium text-muted-foreground">{status}</p>
-                          <p className="text-[10px] text-primary">
-                            {time ? formatTanggalWaktu(time) : <span className="italic text-muted-foreground">-</span>}
-                          </p>
-                        </div>
-                      )
-                    })
-                  })()}
-                </div>
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Nama Nasabah</p>
+                  <Label className="text-muted-foreground">Nama Nasabah</Label>
                   <p className="font-medium">{selectedOrder.namaNasabah}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">No HP</p>
+                  <Label className="text-muted-foreground">No HP</Label>
                   <p className="font-medium">{selectedOrder.noHp}</p>
                 </div>
-                {selectedOrder.namaPasangan && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">Nama Pasangan</p>
-                    <p className="font-medium">{selectedOrder.namaPasangan}</p>
-                  </div>
-                )}
                 <div>
-                  <p className="text-sm text-muted-foreground">Type Unit</p>
-                  <p className="font-medium">{selectedOrder.typeUnit}</p>
+                  <Label className="text-muted-foreground">Unit</Label>
+                  <p className="font-medium">
+                    {selectedOrder.merk} - {selectedOrder.typeUnit}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Merk / Dealer</p>
-                  <p className="font-medium">{selectedOrder.merk}</p>
-                  <p className="text-xs text-muted-foreground">{selectedOrder.dealer}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Sales</p>
-                  <p className="font-medium">{selectedOrder.salesName}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">OTR</p>
+                  <Label className="text-muted-foreground">OTR</Label>
                   <p className="font-medium">{formatRupiah(selectedOrder.otr)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">TDP</p>
+                  <Label className="text-muted-foreground">TDP</Label>
                   <p className="font-medium">{formatRupiah(selectedOrder.tdp)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Angsuran</p>
+                  <Label className="text-muted-foreground">Angsuran</Label>
                   <p className="font-medium">{formatRupiah(selectedOrder.angsuran)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Tenor</p>
-                  <p className="font-medium">{selectedOrder.tenor} Bulan</p>
+                  <Label className="text-muted-foreground">Tenor</Label>
+                  <p className="font-medium">{selectedOrder.tenor} bulan</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">CMO</p>
-                  <p className="font-medium">{selectedOrder.cmoName}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Tanggal Order</p>
-                  <p className="font-medium">{formatTanggalWaktu(selectedOrder.createdAt)}</p>
+                  <Label className="text-muted-foreground">Status</Label>
+                  <div className="mt-1">{getStatusBadge(selectedOrder.status)}</div>
                 </div>
               </div>
 
-              {selectedOrder.catatanKhusus && (
-                <div>
-                  <p className="text-sm text-muted-foreground">Catatan Khusus</p>
-                  <p className="font-medium">{selectedOrder.catatanKhusus}</p>
-                </div>
-              )}
-
               {selectedOrder.hasilSlik && (
                 <div>
-                  <p className="text-sm text-muted-foreground">Hasil SLIK</p>
+                  <Label className="text-muted-foreground">Hasil SLIK</Label>
                   <p className="font-medium">{selectedOrder.hasilSlik}</p>
                 </div>
               )}
 
               {selectedOrder.tanggalSurvey && (
                 <div>
-                  <p className="text-sm text-muted-foreground">Tanggal Survey</p>
+                  <Label className="text-muted-foreground">Tanggal Survey</Label>
                   <p className="font-medium">{selectedOrder.tanggalSurvey}</p>
                 </div>
               )}
 
-              {/* CHANGE: Fixed notes display - use correct property names: note.createdAt instead of note.timestamp, note.note instead of note.text */}
-              <div>
-                <p className="text-sm font-medium mb-2">Riwayat Catatan</p>
-                {selectedOrder.notes && Array.isArray(selectedOrder.notes) && selectedOrder.notes.length > 0 ? (
-                  <div className="space-y-2 max-h-48 overflow-y-auto scroll-smooth">
-                    {selectedOrder.notes.map((note) => (
-                      <div
-                        key={note.id}
-                        className="p-3 rounded-lg bg-muted/50 text-sm transition-colors hover:bg-muted"
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium">
-                            {note.userName || "Unknown"} ({(note.role || "").toUpperCase()})
-                          </span>
-                          <Badge variant="outline" className="text-[10px]">
-                            {note.status}
-                          </Badge>
-                        </div>
-                        <p className="text-muted-foreground">{note.note}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{formatTanggalWaktu(note.createdAt)}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground italic">Belum ada catatan</p>
-                )}
-              </div>
-
-              <div>
-                <p className="text-sm font-medium mb-2">Dokumen</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {selectedOrder.fotoKtpNasabah && (
-                    <div className="space-y-1">
-                      <img
-                        src={selectedOrder.fotoKtpNasabah || "/placeholder.svg"}
-                        alt="KTP Nasabah"
-                        className="w-full h-20 object-cover rounded-lg border cursor-pointer hover:opacity-80"
-                        onClick={() => window.open(selectedOrder.fotoKtpNasabah, "_blank")}
-                      />
-                      <p className="text-xs text-center text-muted-foreground">KTP Nasabah</p>
-                      {canDownloadFiles && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full text-xs bg-transparent"
-                          onClick={() =>
-                            handleDownloadFile(
-                              selectedOrder.fotoKtpNasabah!,
-                              `KTP_Nasabah_${selectedOrder.namaNasabah}.jpg`,
-                            )
-                          }
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          Download
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                  {selectedOrder.fotoKtpPasangan && (
-                    <div className="space-y-1">
-                      <img
-                        src={selectedOrder.fotoKtpPasangan || "/placeholder.svg"}
-                        alt="KTP Pasangan"
-                        className="w-full h-20 object-cover rounded-lg border cursor-pointer hover:opacity-80"
-                        onClick={() => window.open(selectedOrder.fotoKtpPasangan, "_blank")}
-                      />
-                      <p className="text-xs text-center text-muted-foreground">KTP Pasangan</p>
-                      {canDownloadFiles && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full text-xs bg-transparent"
-                          onClick={() =>
-                            handleDownloadFile(
-                              selectedOrder.fotoKtpPasangan!,
-                              `KTP_Pasangan_${selectedOrder.namaNasabah}.jpg`,
-                            )
-                          }
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          Download
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                  {selectedOrder.fotoKk && (
-                    <div className="space-y-1">
-                      <img
-                        src={selectedOrder.fotoKk || "/placeholder.svg"}
-                        alt="Kartu Keluarga"
-                        className="w-full h-20 object-cover rounded-lg border cursor-pointer hover:opacity-80"
-                        onClick={() => window.open(selectedOrder.fotoKk, "_blank")}
-                      />
-                      <p className="text-xs text-center text-muted-foreground">Kartu Keluarga</p>
-                      {canDownloadFiles && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full text-xs bg-transparent"
-                          onClick={() =>
-                            handleDownloadFile(selectedOrder.fotoKk!, `KK_${selectedOrder.namaNasabah}.jpg`)
-                          }
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          Download
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                  {!selectedOrder.fotoKtpNasabah && !selectedOrder.fotoKtpPasangan && !selectedOrder.fotoKk && (
-                    <p className="text-sm text-muted-foreground italic col-span-full">Belum ada dokumen</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Foto Survey */}
-              {selectedOrder.fotoSurvey && selectedOrder.fotoSurvey.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium mb-2">Foto Survey</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {selectedOrder.fotoSurvey.map((foto, idx) => (
-                      <div key={idx} className="space-y-1">
-                        <img
-                          src={foto || "/placeholder.svg"}
-                          alt={`Foto Survey ${idx + 1}`}
-                          className="w-full h-20 object-cover rounded-lg border cursor-pointer hover:opacity-80"
-                          onClick={() => window.open(foto, "_blank")}
-                        />
-                        <p className="text-xs text-center text-muted-foreground">Survey {idx + 1}</p>
-                        {canDownloadFiles && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full text-xs bg-transparent"
-                            onClick={() =>
-                              handleDownloadFile(foto, `Survey_${idx + 1}_${selectedOrder.namaNasabah}.jpg`)
-                            }
-                          >
-                            <Download className="h-3 w-3 mr-1" />
-                            Download
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <OrderTimeline
+                currentStatus={selectedOrder.status}
+                passedStatuses={getPassedStatuses(selectedOrder.status)}
+                timestamps={getStatusTimestamps(selectedOrder.notes)}
+              />
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Process Dialog for CMO - SLIK */}
+      {/* Process Dialog (SLIK) */}
       <Dialog open={showProcessDialog} onOpenChange={setShowProcessDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Hasil Pengecekan SLIK</DialogTitle>
-            <DialogDescription>Masukkan hasil pengecekan SLIK dan pilih keputusan</DialogDescription>
+            <DialogTitle>Input Hasil SLIK</DialogTitle>
+            <DialogDescription>Masukkan hasil pengecekan SLIK</DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Hasil SLIK *</Label>
-              <Textarea
-                value={hasilSlik}
-                onChange={(e) => setHasilSlik(e.target.value.toUpperCase())}
-                placeholder="Masukkan hasil pengecekan SLIK..."
-                rows={3}
-              />
+            <div>
+              <Label>Hasil SLIK</Label>
+              <Select value={hasilSlik} onValueChange={setHasilSlik}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih hasil SLIK" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Clear">Clear</SelectItem>
+                  <SelectItem value="Ada Catatan">Ada Catatan</SelectItem>
+                  <SelectItem value="Tolak">Tolak</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                className="flex-1"
-                variant="default"
-                onClick={() => handleSlikResult("Proses")}
-                disabled={!hasilSlik}
-              >
-                Proses
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowProcessDialog(false)}>
+                Batal
               </Button>
-              <Button
-                className="flex-1"
-                variant="secondary"
-                onClick={() => handleSlikResult("Pertimbangkan")}
-                disabled={!hasilSlik}
-              >
-                Pertimbangkan
-              </Button>
-              <Button
-                className="flex-1"
-                variant="destructive"
-                onClick={() => handleSlikResult("Reject")}
-                disabled={!hasilSlik}
-              >
-                Reject
+              <Button onClick={handleSubmitSlik} disabled={!hasilSlik}>
+                Simpan
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Survey Dialog - updated untuk Map In edit */}
+      {/* Survey Dialog */}
       <Dialog open={showSurveyDialog} onOpenChange={setShowSurveyDialog}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {selectedOrder?.status === "Map In" ? "Edit Data Survey" : "Atur Survey & Checklist"}
-            </DialogTitle>
-            <DialogDescription>
-              {selectedOrder?.status === "Map In"
-                ? "Edit data survey sebelum memberikan keputusan final"
-                : "Atur tanggal survey, checklist dokumen, dan upload foto survey"}
-            </DialogDescription>
+            <DialogTitle>Data Survey</DialogTitle>
+            <DialogDescription>Isi data survey dan checklist dokumen</DialogDescription>
           </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Tanggal Survey</Label>
+              <Input type="date" value={tanggalSurvey} onChange={(e) => setTanggalSurvey(e.target.value)} />
+            </div>
 
-          {selectedOrder && (
-            <div className="space-y-6">
-              {/* Tanggal Survey */}
-              <div className="space-y-2">
-                <Label>Tanggal Survey *</Label>
-                <Input type="date" value={tanggalSurvey} onChange={(e) => setTanggalSurvey(e.target.value)} />
+            <div className="space-y-2">
+              <Label>Checklist Dokumen</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(checklist).map(([key, value]) => (
+                  <div key={key} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={key}
+                      checked={value}
+                      onCheckedChange={(checked) => setChecklist((prev) => ({ ...prev, [key]: checked as boolean }))}
+                    />
+                    <Label htmlFor={key} className="text-sm capitalize">
+                      {key.replace(/([A-Z])/g, " $1").trim()}
+                    </Label>
+                  </div>
+                ))}
               </div>
+            </div>
 
-              {/* Checklist Dokumen */}
-              <div className="space-y-2">
-                <Label>Checklist Dokumen</Label>
-                <div className="grid grid-cols-2 gap-3 p-4 rounded-lg border bg-muted/30">
-                  {Object.entries({
-                    ktpPemohon: "KTP Pemohon",
-                    ktpPasangan: "KTP Pasangan",
-                    kartuKeluarga: "Kartu Keluarga",
-                    npwp: "NPWP",
-                    bkr: "BKR",
-                    livin: "Livin",
-                    rekTabungan: "Rek Tabungan/Nota",
-                    mufApp: "MufApp",
-                  }).map(([key, label]) => (
-                    <div key={key} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={key}
-                        checked={checklist[key as keyof OrderChecklist]}
-                        onCheckedChange={(checked) => setChecklist((prev) => ({ ...prev, [key]: checked as boolean }))}
-                      />
-                      <label htmlFor={key} className="text-sm cursor-pointer">
-                        {label}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
+            <div className="space-y-2">
+              <Label>Foto Survey</Label>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                multiple
+                onChange={handleUploadFoto}
+                className="hidden"
+              />
               <Button
-                className="w-full bg-transparent"
+                type="button"
                 variant="outline"
-                onClick={handleSetSurveyDate}
-                disabled={!tanggalSurvey}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingFoto}
+                className="w-full"
               >
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Simpan Tanggal & Checklist
-              </Button>
-
-              {/* Upload Foto Survey */}
-              <div className="space-y-2">
-                <Label>Upload Foto Survey</Label>
-                <div className="p-4 rounded-lg border-2 border-dashed border-muted-foreground/25">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleFotoSurveyUpload}
-                    className="hidden"
-                  />
-                  <div className="text-center">
-                    <Camera className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isUploadingFoto}
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      Pilih Foto
-                    </Button>
-                    <p className="text-xs text-muted-foreground mt-2">Upload hasil survey lapangan</p>
-                    {isUploadingFoto && <p className="text-xs text-primary mt-2">Uploading...</p>}
-                  </div>
-                </div>
-
-                {/* Preview Foto Survey */}
-                {fotoSurvey.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">{fotoSurvey.length} foto dipilih</p>
-                    <div className="grid grid-cols-3 gap-2">
-                      {fotoSurvey.map((foto, idx) => (
-                        <div key={idx} className="relative">
-                          <img
-                            src={foto || "/placeholder.svg"}
-                            alt={`Preview ${idx + 1}`}
-                            className="w-full h-20 object-cover rounded-lg border"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setFotoSurvey((prev) => prev.filter((_, i) => i !== idx))}
-                            className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <Button
-                      className="w-full"
-                      variant="secondary"
-                      onClick={handleSaveFotoSurvey}
-                      disabled={isUploadingFoto}
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      Simpan Foto Survey
-                    </Button>
-                  </div>
+                {isUploadingFoto ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4 mr-2" />
                 )}
-              </div>
-
-              {/* Action Buttons - berbeda untuk status Proses vs Map In */}
-              {selectedOrder.status === "Proses" && (
-                <>
-                  <div className="flex flex-col sm:flex-row gap-2 pt-4 border-t">
-                    <Button
-                      className="flex-1"
-                      onClick={() => handleMapIn(selectedOrder)}
-                      disabled={!selectedOrder.fotoSurvey || selectedOrder.fotoSurvey.length === 0 || isUploadingFoto}
-                    >
-                      <CheckCircle2 className="h-4 w-4 mr-2" />
-                      Map In
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      className="flex-1"
-                      onClick={() => {
-                        addNote(selectedOrder, "Order ditolak pada tahap survey", "Reject")
-                        setShowSurveyDialog(false)
-                        toast({ title: "Order ditolak", description: "Order berhasil di-reject" })
-                      }}
-                    >
-                      <XCircle className="h-4 w-4 mr-2" />
-                      Reject
-                    </Button>
-                  </div>
-
-                  {(!selectedOrder.fotoSurvey || selectedOrder.fotoSurvey.length === 0) && (
-                    <p className="text-xs text-amber-600 text-center">
-                      * Upload foto survey terlebih dahulu untuk dapat melakukan Map In
-                    </p>
-                  )}
-                </>
-              )}
-
-              {selectedOrder.status === "Map In" && (
-                <div className="pt-4 border-t">
-                  <Button
-                    className="w-full bg-transparent"
-                    variant="outline"
-                    onClick={() => {
-                      // Update order dengan data terbaru
-                      orderStore.update(selectedOrder.id, {
-                        tanggalSurvey,
-                        checklist,
-                        fotoSurvey,
-                      })
-                      addNote(selectedOrder, "Data survey diperbarui", "Map In")
-                      setShowSurveyDialog(false)
-                      loadOrders()
-                      toast({ title: "Berhasil", description: "Data survey berhasil diperbarui" })
-                    }}
-                    disabled={isUploadingFoto}
-                  >
-                    Simpan Perubahan
-                  </Button>
-                  <p className="text-xs text-muted-foreground text-center mt-2">
-                    Gunakan tombol keputusan di tabel untuk Approve atau Reject
-                  </p>
+                Upload Foto
+              </Button>
+              {fotoSurvey.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  {fotoSurvey.map((foto, idx) => (
+                    <img
+                      key={idx}
+                      src={foto || "/placeholder.svg"}
+                      alt={`Survey ${idx + 1}`}
+                      className="w-full h-20 object-cover rounded"
+                    />
+                  ))}
                 </div>
               )}
             </div>
-          )}
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowSurveyDialog(false)}>
+                Batal
+              </Button>
+              <Button onClick={handleSubmitSurvey} disabled={!tanggalSurvey}>
+                Simpan
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
+      {/* Map In Decision Dialog */}
       <Dialog open={showMapInDecisionDialog} onOpenChange={setShowMapInDecisionDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Keputusan Final</DialogTitle>
-            <DialogDescription>Pilih Approve atau Reject untuk order ini</DialogDescription>
+            <DialogTitle>Map In Order</DialogTitle>
+            <DialogDescription>Kirim order ke CMH untuk keputusan</DialogDescription>
           </DialogHeader>
-
-          {selectedOrder && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-lg bg-muted/50">
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Nasabah</p>
-                    <p className="font-medium">{selectedOrder.namaNasabah}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Unit</p>
-                    <p className="font-medium">{selectedOrder.typeUnit}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">OTR</p>
-                    <p className="font-medium">{formatRupiah(selectedOrder.otr)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">TDP</p>
-                    <p className="font-medium">{formatRupiah(selectedOrder.tdp)}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Catatan (opsional)</Label>
-                <Textarea
-                  value={mapInDecisionNote}
-                  onChange={(e) => setMapInDecisionNote(e.target.value.toUpperCase())}
-                  placeholder="Tambahkan catatan untuk keputusan ini..."
-                  rows={3}
-                />
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Button className="flex-1" onClick={() => handleMapInDecision("Approve")}>
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Approve
-                </Button>
-                <Button variant="destructive" className="flex-1" onClick={() => handleMapInDecision("Reject")}>
-                  <XCircle className="h-4 w-4 mr-2" />
-                  Reject
-                </Button>
-              </div>
+          <div className="space-y-4">
+            <div>
+              <Label>Catatan (Opsional)</Label>
+              <Textarea
+                value={mapInDecisionNote}
+                onChange={(e) => setMapInDecisionNote(e.target.value)}
+                placeholder="Tambahkan catatan..."
+              />
             </div>
-          )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowMapInDecisionDialog(false)}>
+                Batal
+              </Button>
+              <Button onClick={handleSubmitMapIn}>Kirim ke CMH</Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1310,61 +833,35 @@ export default function TrackingPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Keputusan CMH</DialogTitle>
-            <DialogDescription>
-              Order dalam status Pertimbangkan. Berikan keputusan untuk melanjutkan atau menolak order ini.
-            </DialogDescription>
+            <DialogDescription>Berikan keputusan untuk order ini</DialogDescription>
           </DialogHeader>
-
-          {selectedOrder && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-lg bg-muted/50">
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Nasabah</p>
-                    <p className="font-medium">{selectedOrder.namaNasabah}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Unit</p>
-                    <p className="font-medium">{selectedOrder.typeUnit}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">OTR</p>
-                    <p className="font-medium">{formatRupiah(selectedOrder.otr)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">TDP</p>
-                    <p className="font-medium">{formatRupiah(selectedOrder.tdp)}</p>
-                  </div>
-                </div>
-              </div>
-
-              {selectedOrder.hasilSlik && (
-                <div className="p-4 rounded-lg bg-amber-50 border border-amber-200">
-                  <p className="text-sm text-amber-700 font-medium mb-1">Hasil SLIK:</p>
-                  <p className="text-sm text-amber-900">{selectedOrder.hasilSlik}</p>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label>Catatan CMH</Label>
-                <Textarea
-                  value={cmhNote}
-                  onChange={(e) => setCmhNote(e.target.value.toUpperCase())}
-                  placeholder="Tambahkan catatan untuk keputusan ini..."
-                  rows={3}
-                />
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Button className="flex-1" onClick={() => handleCmhDecision("Lanjut")}>
-                  Lanjutkan ke Proses
-                </Button>
-                <Button variant="destructive" className="flex-1" onClick={() => handleCmhDecision("Reject")}>
-                  Reject
-                </Button>
-              </div>
+          <div className="space-y-4">
+            <div>
+              <Label>Catatan</Label>
+              <Textarea
+                value={cmhNote}
+                onChange={(e) => setCmhNote(e.target.value)}
+                placeholder="Tambahkan catatan keputusan..."
+              />
             </div>
-          )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowCmhDialog(false)}>
+                Batal
+              </Button>
+              <Button variant="destructive" onClick={() => handleSubmitCmhDecision("Reject")}>
+                <XCircle className="h-4 w-4 mr-2" />
+                Reject
+              </Button>
+              <Button variant="secondary" onClick={() => handleSubmitCmhDecision("Pertimbangkan")}>
+                <AlertTriangle className="h-4 w-4 mr-2" />
+                Pertimbangkan
+              </Button>
+              <Button onClick={() => handleSubmitCmhDecision("Approve")}>
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Approve
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1373,23 +870,25 @@ export default function TrackingPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Ajukan Banding</DialogTitle>
-            <DialogDescription>Jelaskan alasan pengajuan banding untuk order ini</DialogDescription>
+            <DialogDescription>Ajukan banding untuk order yang ditolak</DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Alasan Banding *</Label>
+            <div>
+              <Label>Alasan Banding</Label>
               <Textarea
                 value={bandingNote}
-                onChange={(e) => setBandingNote(e.target.value.toUpperCase())}
-                placeholder="Jelaskan alasan pengajuan banding..."
-                rows={4}
+                onChange={(e) => setBandingNote(e.target.value)}
+                placeholder="Jelaskan alasan banding..."
               />
             </div>
-
-            <Button className="w-full" onClick={handleBanding} disabled={!bandingNote}>
-              Ajukan Banding
-            </Button>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowBandingDialog(false)}>
+                Batal
+              </Button>
+              <Button onClick={handleSubmitBanding} disabled={!bandingNote}>
+                Ajukan Banding
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

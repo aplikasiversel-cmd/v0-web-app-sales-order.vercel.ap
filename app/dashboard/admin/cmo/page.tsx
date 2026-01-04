@@ -1,41 +1,30 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useEffect } from "react"
-import { Plus, Pencil, Trash2, Search, Eye, EyeOff, Loader2 } from "lucide-react"
+import { useEffect, useState, useMemo } from "react"
+import { Plus, Pencil, Trash2, Search, Eye, EyeOff, Check, ChevronLeft, ChevronRight } from "lucide-react"
 import { DashboardHeader } from "@/components/dashboard/header"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { useAuth } from "@/lib/auth-context"
-import { userStore, generateId } from "@/lib/data-store"
-import type { User, UserRole } from "@/lib/types"
-import { formatRole } from "@/lib/utils/format"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/lib/auth-context"
+import { userStore } from "@/lib/data-store"
+import type { User } from "@/lib/types"
+
+const ITEMS_PER_PAGE = 10
 
 export default function AdminCmoPage() {
   const { user } = useAuth()
@@ -50,6 +39,7 @@ export default function AdminCmoPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
 
   const [formData, setFormData] = useState({
     username: "",
@@ -69,8 +59,16 @@ export default function AdminCmoPage() {
       setLoading(true)
       const allUsers = await userStore.getAll()
       if (Array.isArray(allUsers)) {
-        setCmoList(allUsers.filter((u) => u.role === "cmo" || u.role === "cmh"))
-        setCmhList(allUsers.filter((u) => u.role === "cmh" && u.isActive))
+        const seenUsernames = new Set<string>()
+        const uniqueUsers = allUsers.filter((u) => {
+          if (seenUsernames.has(u.username)) {
+            return false
+          }
+          seenUsernames.add(u.username)
+          return true
+        })
+        setCmoList(uniqueUsers.filter((u) => u.role === "cmo" || u.role === "cmh"))
+        setCmhList(uniqueUsers.filter((u) => u.role === "cmh" && u.isActive))
       } else {
         setCmoList([])
         setCmhList([])
@@ -84,15 +82,27 @@ export default function AdminCmoPage() {
     }
   }
 
-  const getCmhName = (cmhId?: string) => {
-    if (!cmhId) return "-"
-    const cmh = cmhList.find((c) => c.id === cmhId)
-    // Also search in cmoList in case CMH is not in cmhList yet
-    if (!cmh) {
-      const cmhFromAll = cmoList.find((c) => c.id === cmhId && c.role === "cmh")
-      return cmhFromAll?.namaLengkap || "-"
+  const cmhNameMap = useMemo(() => {
+    const map = new Map<string, string>()
+    cmoList.forEach((c) => {
+      if (c.role === "cmh") {
+        map.set(c.id, c.namaLengkap)
+        // Also map by username for fallback
+        map.set(c.username, c.namaLengkap)
+      }
+    })
+    return map
+  }, [cmoList])
+
+  const getCmhName = (cmo: User) => {
+    // First try cmhName field
+    if (cmo.cmhName) return cmo.cmhName
+    // Then try lookup by cmhId
+    if (cmo.cmhId) {
+      const name = cmhNameMap.get(cmo.cmhId)
+      if (name) return name
     }
-    return cmh?.namaLengkap || "-"
+    return "-"
   }
 
   const filteredCmo = cmoList.filter(
@@ -101,12 +111,22 @@ export default function AdminCmoPage() {
       c.username.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
+  const totalItems = filteredCmo.length
+  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE)
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = startIndex + ITEMS_PER_PAGE
+  const paginatedCmo = filteredCmo.slice(startIndex, endIndex)
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery])
+
   const handleAdd = () => {
     setFormData({
       username: "",
       namaLengkap: "",
       jabatan: "cmo",
-      password: "Muf1234",
+      password: "Muf1234!",
       isActive: true,
       cmhId: "",
     })
@@ -131,151 +151,138 @@ export default function AdminCmoPage() {
     setShowDeleteDialog(true)
   }
 
-  const submitAdd = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const validatePassword = (password: string) => {
+    const hasMinLength = password.length >= 8
+    const hasUpperCase = /[A-Z]/.test(password)
+    const hasLowerCase = /[a-z]/.test(password)
+    const hasNumber = /\d/.test(password)
+    const hasSpecialChar = /[!@#$%^&*]/.test(password)
+    return { hasMinLength, hasUpperCase, hasLowerCase, hasNumber, hasSpecialChar }
+  }
+
+  const isPasswordValid = (password: string) => {
+    const validation = validatePassword(password)
+    return Object.values(validation).every(Boolean)
+  }
+
+  const handleSubmitAdd = async () => {
+    if (!formData.namaLengkap.trim()) {
+      toast({ title: "Error", description: "Nama lengkap harus diisi", variant: "destructive" })
+      return
+    }
+    if (!formData.username.trim()) {
+      toast({ title: "Error", description: "Username/NIK harus diisi", variant: "destructive" })
+      return
+    }
+    if (!isPasswordValid(formData.password)) {
+      toast({ title: "Error", description: "Password tidak memenuhi kriteria", variant: "destructive" })
+      return
+    }
+
+    if (formData.jabatan === "cmo" && !formData.cmhId) {
+      toast({ title: "Error", description: "CMO harus memiliki CMH (Atasan)", variant: "destructive" })
+      return
+    }
+
     setSubmitting(true)
-
     try {
-      if (formData.password.length < 6) {
-        toast({
-          title: "Gagal",
-          description: "Password minimal 6 karakter",
-          variant: "destructive",
-        })
-        setSubmitting(false)
-        return
-      }
-
-      const existingUser = await userStore.getByUsername(formData.username)
-
-      if (existingUser) {
-        toast({
-          title: "Gagal",
-          description: "Username sudah digunakan",
-          variant: "destructive",
-        })
-        setSubmitting(false)
-        return
-      }
-
+      // Find CMH name
       const selectedCmh = cmhList.find((c) => c.id === formData.cmhId)
 
-      const newCmo: User = {
-        id: generateId(),
+      await userStore.add({
         username: formData.username,
-        password: formData.password,
         namaLengkap: formData.namaLengkap.toUpperCase(),
-        role: formData.jabatan as UserRole,
-        jabatan: formData.jabatan === "cmo" ? "CMO" : "CMH",
-        isFirstLogin: true,
+        password: formData.password,
+        role: formData.jabatan,
+        jabatan: formData.jabatan === "cmo" ? "CMO (Credit Marketing Officer)" : "CMH (Credit Marketing Head)",
         isActive: formData.isActive,
-        createdAt: new Date().toISOString(),
-        cmhId: formData.jabatan === "cmo" ? formData.cmhId : undefined,
-        cmhName: formData.jabatan === "cmo" && selectedCmh ? selectedCmh.namaLengkap : undefined,
-      }
-
-      await userStore.add(newCmo)
-
-      toast({
-        title: "Berhasil",
-        description: `${formData.jabatan === "cmo" ? "CMO" : "CMH"} berhasil ditambahkan`,
+        isFirstLogin: true,
+        cmhId: formData.jabatan === "cmo" ? formData.cmhId : "",
+        cmhName: formData.jabatan === "cmo" ? selectedCmh?.namaLengkap || "" : "",
       })
-
+      toast({ title: "Berhasil", description: "CMO/CMH berhasil ditambahkan" })
       setShowAddDialog(false)
       loadCmo()
     } catch (error) {
       console.error("Error adding CMO:", error)
-      toast({
-        title: "Gagal",
-        description: "Terjadi kesalahan saat menambah data",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Gagal menambahkan CMO/CMH", variant: "destructive" })
     } finally {
       setSubmitting(false)
     }
   }
 
-  const submitEdit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmitEdit = async () => {
     if (!selectedCmo) return
+    if (!formData.namaLengkap.trim()) {
+      toast({ title: "Error", description: "Nama lengkap harus diisi", variant: "destructive" })
+      return
+    }
+    if (!isPasswordValid(formData.password)) {
+      toast({ title: "Error", description: "Password tidak memenuhi kriteria", variant: "destructive" })
+      return
+    }
+
+    if (formData.jabatan === "cmo" && !formData.cmhId) {
+      toast({ title: "Error", description: "CMO harus memiliki CMH (Atasan)", variant: "destructive" })
+      return
+    }
+
     setSubmitting(true)
-
     try {
-      if (formData.password.length < 6) {
-        toast({
-          title: "Gagal",
-          description: "Password minimal 6 karakter",
-          variant: "destructive",
-        })
-        setSubmitting(false)
-        return
-      }
-
+      // Find CMH name
       const selectedCmh = cmhList.find((c) => c.id === formData.cmhId)
 
       await userStore.update(selectedCmo.id, {
         namaLengkap: formData.namaLengkap.toUpperCase(),
         password: formData.password,
+        role: formData.jabatan,
+        jabatan: formData.jabatan === "cmo" ? "CMO (Credit Marketing Officer)" : "CMH (Credit Marketing Head)",
         isActive: formData.isActive,
-        jabatan: formData.jabatan === "cmo" ? "CMO" : "CMH",
-        cmhId: formData.jabatan === "cmo" ? formData.cmhId : null,
-        cmhName: formData.jabatan === "cmo" && selectedCmh ? selectedCmh.namaLengkap : null,
+        cmhId: formData.jabatan === "cmo" ? formData.cmhId : "",
+        cmhName: formData.jabatan === "cmo" ? selectedCmh?.namaLengkap || "" : "",
       })
-
-      toast({
-        title: "Berhasil",
-        description: "Data berhasil diperbarui",
-      })
-
+      toast({ title: "Berhasil", description: "CMO/CMH berhasil diperbarui" })
       setShowEditDialog(false)
       loadCmo()
     } catch (error) {
       console.error("Error updating CMO:", error)
-      toast({
-        title: "Gagal",
-        description: "Terjadi kesalahan saat memperbarui data",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Gagal memperbarui CMO/CMH", variant: "destructive" })
     } finally {
       setSubmitting(false)
     }
   }
 
-  const confirmDelete = async () => {
+  const handleConfirmDelete = async () => {
     if (!selectedCmo) return
     setSubmitting(true)
-
     try {
       await userStore.delete(selectedCmo.id)
-
-      toast({
-        title: "Berhasil",
-        description: "Data berhasil dihapus",
-      })
-
+      toast({ title: "Berhasil", description: "CMO/CMH berhasil dihapus" })
       setShowDeleteDialog(false)
       loadCmo()
     } catch (error) {
       console.error("Error deleting CMO:", error)
-      toast({
-        title: "Gagal",
-        description: "Terjadi kesalahan saat menghapus data",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Gagal menghapus CMO/CMH", variant: "destructive" })
     } finally {
       setSubmitting(false)
     }
   }
 
+  const passwordValidation = validatePassword(formData.password)
+
   if (!user || user.role !== "admin") {
-    return null
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p>Akses ditolak</p>
+      </div>
+    )
   }
 
   return (
     <div className="flex flex-col min-h-screen">
       <DashboardHeader title="Kelola CMO/CMH" description="Manajemen data CMO dan CMH" />
 
-      <div className="flex-1 p-4 lg:p-6">
+      <div className="flex-1 p-4 lg:p-6 space-y-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -288,9 +295,9 @@ export default function AdminCmoPage() {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-4 mb-4">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <div className="mb-4">
+              <div className="relative max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Cari CMO/CMH..."
                   value={searchQuery}
@@ -301,11 +308,11 @@ export default function AdminCmoPage() {
             </div>
 
             {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               </div>
             ) : (
-              <div className="rounded-md border overflow-x-auto">
+              <>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -318,42 +325,65 @@ export default function AdminCmoPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredCmo.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                          Tidak ada data CMO/CMH
+                    {paginatedCmo.map((cmo) => (
+                      <TableRow key={cmo.id}>
+                        <TableCell className="font-mono">{cmo.username}</TableCell>
+                        <TableCell className="font-medium">{cmo.namaLengkap}</TableCell>
+                        <TableCell>
+                          <Badge variant={cmo.role === "cmh" ? "default" : "secondary"}>{cmo.role.toUpperCase()}</Badge>
+                        </TableCell>
+                        <TableCell>{cmo.role === "cmo" ? getCmhName(cmo) : "-"}</TableCell>
+                        <TableCell>
+                          <Badge variant={cmo.isActive ? "default" : "secondary"}>
+                            {cmo.isActive ? "Aktif" : "Nonaktif"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => handleEdit(cmo)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive"
+                              onClick={() => handleDelete(cmo)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
-                    ) : (
-                      filteredCmo.map((cmo) => (
-                        <TableRow key={cmo.id}>
-                          <TableCell className="font-medium">{cmo.username}</TableCell>
-                          <TableCell>{cmo.namaLengkap}</TableCell>
-                          <TableCell>
-                            <Badge variant={cmo.role === "cmh" ? "default" : "secondary"}>{formatRole(cmo.role)}</Badge>
-                          </TableCell>
-                          <TableCell>{cmo.role === "cmo" ? cmo.cmhName || getCmhName(cmo.cmhId) : "-"}</TableCell>
-                          <TableCell>
-                            <Badge variant={cmo.isActive ? "default" : "outline"}>
-                              {cmo.isActive ? "Aktif" : "Nonaktif"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button variant="ghost" size="icon" onClick={() => handleEdit(cmo)}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" onClick={() => handleDelete(cmo)}>
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
+                    ))}
                   </TableBody>
                 </Table>
-              </div>
+
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Sebelumnya
+                    </Button>
+                    <span className="text-sm text-muted-foreground px-2">
+                      Halaman {currentPage} dari {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Selanjutnya
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -364,102 +394,118 @@ export default function AdminCmoPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Tambah CMO/CMH</DialogTitle>
-            <DialogDescription>Tambah CMO atau CMH baru</DialogDescription>
+            <DialogDescription>Tambahkan data CMO atau CMH baru</DialogDescription>
           </DialogHeader>
-          <form onSubmit={submitAdd}>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="username">Username/NIK *</Label>
-                <Input
-                  id="username"
-                  value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  placeholder="Masukkan Username"
-                  required
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="namaLengkap">Nama Lengkap *</Label>
-                <Input
-                  id="namaLengkap"
-                  value={formData.namaLengkap}
-                  onChange={(e) => setFormData({ ...formData, namaLengkap: e.target.value })}
-                  placeholder="Masukkan Nama Lengkap"
-                  required
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="jabatan">Jabatan *</Label>
+          <div className="space-y-4">
+            <div>
+              <Label>Username/NIK *</Label>
+              <Input
+                value={formData.username}
+                onChange={(e) => setFormData((prev) => ({ ...prev, username: e.target.value }))}
+                placeholder="Masukkan NIK"
+              />
+            </div>
+            <div>
+              <Label>Nama Lengkap *</Label>
+              <Input
+                value={formData.namaLengkap}
+                onChange={(e) => setFormData((prev) => ({ ...prev, namaLengkap: e.target.value }))}
+                placeholder="Masukkan nama lengkap"
+              />
+            </div>
+            <div>
+              <Label>Jabatan</Label>
+              <Select
+                value={formData.jabatan}
+                onValueChange={(value: "cmo" | "cmh") =>
+                  setFormData((prev) => ({ ...prev, jabatan: value, cmhId: "" }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cmo">CMO (Credit Marketing Officer)</SelectItem>
+                  <SelectItem value="cmh">CMH (Credit Marketing Head)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {formData.jabatan === "cmo" && (
+              <div>
+                <Label>CMH (Atasan) *</Label>
                 <Select
-                  value={formData.jabatan}
-                  onValueChange={(value: "cmo" | "cmh") => setFormData({ ...formData, jabatan: value, cmhId: "" })}
+                  value={formData.cmhId}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, cmhId: value }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Pilih jabatan" />
+                    <SelectValue placeholder="Pilih CMH" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cmo">CMO (Credit Marketing Officer)</SelectItem>
-                    <SelectItem value="cmh">CMH (Credit Marketing Head)</SelectItem>
+                    {cmhList.map((cmh) => (
+                      <SelectItem key={cmh.id} value={cmh.id}>
+                        {cmh.namaLengkap}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                {cmhList.length === 0 && (
+                  <p className="text-xs text-destructive mt-1">Belum ada CMH. Tambahkan CMH terlebih dahulu.</p>
+                )}
               </div>
-              {formData.jabatan === "cmo" && (
-                <div className="grid gap-2">
-                  <Label htmlFor="cmhId">CMH (Atasan) *</Label>
-                  <Select value={formData.cmhId} onValueChange={(value) => setFormData({ ...formData, cmhId: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih CMH" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {cmhList.map((cmh) => (
-                        <SelectItem key={cmh.id} value={cmh.id}>
-                          {cmh.namaLengkap}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              <div className="grid gap-2">
-                <Label htmlFor="password">Password *</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    required
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="isActive">Status Aktif</Label>
-                <Switch
-                  id="isActive"
-                  checked={formData.isActive}
-                  onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
+            )}
+            <div>
+              <Label>Password *</Label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  value={formData.password}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, password: e.target.value }))}
                 />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-full px-3"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+              <div className="mt-2 space-y-1 text-xs">
+                <div className={passwordValidation.hasMinLength ? "text-green-600" : "text-muted-foreground"}>
+                  {passwordValidation.hasMinLength ? <Check className="inline h-3 w-3 mr-1" /> : "○"} Minimal 8 karakter
+                </div>
+                <div className={passwordValidation.hasUpperCase ? "text-green-600" : "text-muted-foreground"}>
+                  {passwordValidation.hasUpperCase ? <Check className="inline h-3 w-3 mr-1" /> : "○"} Huruf besar (A-Z)
+                </div>
+                <div className={passwordValidation.hasLowerCase ? "text-green-600" : "text-muted-foreground"}>
+                  {passwordValidation.hasLowerCase ? <Check className="inline h-3 w-3 mr-1" /> : "○"} Huruf kecil (a-z)
+                </div>
+                <div className={passwordValidation.hasNumber ? "text-green-600" : "text-muted-foreground"}>
+                  {passwordValidation.hasNumber ? <Check className="inline h-3 w-3 mr-1" /> : "○"} Angka (0-9)
+                </div>
+                <div className={passwordValidation.hasSpecialChar ? "text-green-600" : "text-muted-foreground"}>
+                  {passwordValidation.hasSpecialChar ? <Check className="inline h-3 w-3 mr-1" /> : "○"} Karakter khusus
+                  (!@#$%^&*)
+                </div>
               </div>
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowAddDialog(false)}>
-                Batal
-              </Button>
-              <Button type="submit" disabled={submitting}>
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Simpan
-              </Button>
-            </DialogFooter>
-          </form>
+            <div className="flex items-center justify-between">
+              <Label>Status Aktif</Label>
+              <Switch
+                checked={formData.isActive}
+                onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, isActive: checked }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddDialog(false)}>
+              Batal
+            </Button>
+            <Button onClick={handleSubmitAdd} disabled={submitting}>
+              {submitting ? "Menyimpan..." : "Simpan"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -470,107 +516,121 @@ export default function AdminCmoPage() {
             <DialogTitle>Edit CMO/CMH</DialogTitle>
             <DialogDescription>Ubah data CMO atau CMH</DialogDescription>
           </DialogHeader>
-          <form onSubmit={submitEdit}>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="edit-username">Username/NIK</Label>
-                <Input id="edit-username" value={formData.username} disabled />
+          <div className="space-y-4">
+            <div>
+              <Label>Username/NIK</Label>
+              <Input value={formData.username} disabled className="bg-muted" />
+            </div>
+            <div>
+              <Label>Nama Lengkap *</Label>
+              <Input
+                value={formData.namaLengkap}
+                onChange={(e) => setFormData((prev) => ({ ...prev, namaLengkap: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Jabatan</Label>
+              <Input
+                value={formData.jabatan === "cmo" ? "CMO (Credit Marketing Officer)" : "CMH (Credit Marketing Head)"}
+                disabled
+                className="bg-muted"
+              />
+            </div>
+            {formData.jabatan === "cmo" && (
+              <div>
+                <Label>CMH (Atasan) *</Label>
+                <Select
+                  value={formData.cmhId}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, cmhId: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih CMH" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cmhList.map((cmh) => (
+                      <SelectItem key={cmh.id} value={cmh.id}>
+                        {cmh.namaLengkap}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-namaLengkap">Nama Lengkap *</Label>
+            )}
+            <div>
+              <Label>Password *</Label>
+              <div className="relative">
                 <Input
-                  id="edit-namaLengkap"
-                  value={formData.namaLengkap}
-                  onChange={(e) => setFormData({ ...formData, namaLengkap: e.target.value })}
-                  required
+                  type={showPassword ? "text" : "password"}
+                  value={formData.password}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, password: e.target.value }))}
                 />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-full px-3"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-jabatan">Jabatan</Label>
-                <Input
-                  id="edit-jabatan"
-                  value={formData.jabatan === "cmo" ? "CMO (Credit Marketing Officer)" : "CMH (Credit Marketing Head)"}
-                  disabled
-                />
-              </div>
-              {formData.jabatan === "cmo" && (
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-cmhId">CMH (Atasan)</Label>
-                  <Select value={formData.cmhId} onValueChange={(value) => setFormData({ ...formData, cmhId: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih CMH" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {cmhList.map((cmh) => (
-                        <SelectItem key={cmh.id} value={cmh.id}>
-                          {cmh.namaLengkap}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <div className="mt-2 space-y-1 text-xs">
+                <div className={passwordValidation.hasMinLength ? "text-green-600" : "text-muted-foreground"}>
+                  {passwordValidation.hasMinLength ? <Check className="inline h-3 w-3 mr-1" /> : "○"} Minimal 8 karakter
                 </div>
-              )}
-              <div className="grid gap-2">
-                <Label htmlFor="edit-password">Password *</Label>
-                <div className="relative">
-                  <Input
-                    id="edit-password"
-                    type={showPassword ? "text" : "password"}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    required
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
+                <div className={passwordValidation.hasUpperCase ? "text-green-600" : "text-muted-foreground"}>
+                  {passwordValidation.hasUpperCase ? <Check className="inline h-3 w-3 mr-1" /> : "○"} Huruf besar (A-Z)
                 </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="edit-isActive">Status Aktif</Label>
-                <Switch
-                  id="edit-isActive"
-                  checked={formData.isActive}
-                  onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
-                />
+                <div className={passwordValidation.hasLowerCase ? "text-green-600" : "text-muted-foreground"}>
+                  {passwordValidation.hasLowerCase ? <Check className="inline h-3 w-3 mr-1" /> : "○"} Huruf kecil (a-z)
+                </div>
+                <div className={passwordValidation.hasNumber ? "text-green-600" : "text-muted-foreground"}>
+                  {passwordValidation.hasNumber ? <Check className="inline h-3 w-3 mr-1" /> : "○"} Angka (0-9)
+                </div>
+                <div className={passwordValidation.hasSpecialChar ? "text-green-600" : "text-muted-foreground"}>
+                  {passwordValidation.hasSpecialChar ? <Check className="inline h-3 w-3 mr-1" /> : "○"} Karakter khusus
+                  (!@#$%^&*)
+                </div>
               </div>
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowEditDialog(false)}>
-                Batal
-              </Button>
-              <Button type="submit" disabled={submitting}>
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Simpan
-              </Button>
-            </DialogFooter>
-          </form>
+            <div className="flex items-center justify-between">
+              <Label>Status Aktif</Label>
+              <Switch
+                checked={formData.isActive}
+                onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, isActive: checked }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+              Batal
+            </Button>
+            <Button onClick={handleSubmitEdit} disabled={submitting}>
+              {submitting ? "Menyimpan..." : "Simpan"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Delete Dialog */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Hapus CMO/CMH</AlertDialogTitle>
-            <AlertDialogDescription>
-              Apakah Anda yakin ingin menghapus {selectedCmo?.namaLengkap}? Tindakan ini tidak dapat dibatalkan.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} disabled={submitting}>
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Hapus
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Hapus CMO/CMH</DialogTitle>
+            <DialogDescription>
+              Apakah Anda yakin ingin menghapus <strong>{selectedCmo?.namaLengkap}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+              Batal
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDelete} disabled={submitting}>
+              {submitting ? "Menghapus..." : "Hapus"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

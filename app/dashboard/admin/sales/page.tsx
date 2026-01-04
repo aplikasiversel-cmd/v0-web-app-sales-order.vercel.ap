@@ -20,7 +20,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
-import { Search, Plus, Pencil, Trash2, Eye, EyeOff, Check, X, AlertCircle, Loader2 } from "lucide-react"
+import { Search, Plus, Pencil, Trash2, Eye, EyeOff, Check, X, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { userStore, dealerStore } from "@/lib/data-store"
 import type { User, Dealer } from "@/lib/types"
@@ -76,6 +76,14 @@ export default function AdminSalesPage() {
     spvId: "",
   })
 
+  const spvNameMap = useMemo(() => {
+    const map = new Map<string, string>()
+    spvList.forEach((spv) => {
+      map.set(spv.id, spv.namaLengkap)
+    })
+    return map
+  }, [spvList])
+
   const allMerks = useMemo(() => {
     const merksFromDb = [...new Set(dbDealers.map((d) => d.merk))]
     const combined = [...new Set([...MERK_LIST, ...customMerks, ...merksFromDb])]
@@ -99,13 +107,27 @@ export default function AdminSalesPage() {
   }, [editFormData.merk, dbDealers])
 
   const addFilteredSpvList = useMemo(() => {
-    if (!addFormData.merk || !addFormData.dealer) return []
-    return spvList.filter((spv) => spv.merk === addFormData.merk && spv.dealer === addFormData.dealer)
+    // First try to filter by merk and dealer
+    if (addFormData.merk && addFormData.dealer) {
+      const filtered = spvList.filter(
+        (spv) => spv.isActive && spv.merk === addFormData.merk && spv.dealer === addFormData.dealer,
+      )
+      if (filtered.length > 0) return filtered
+    }
+    // If no match, show all active SPV
+    return spvList.filter((spv) => spv.isActive)
   }, [spvList, addFormData.merk, addFormData.dealer])
 
   const editFilteredSpvList = useMemo(() => {
-    if (!editFormData.merk || !editFormData.dealer) return []
-    return spvList.filter((spv) => spv.merk === editFormData.merk && spv.dealer === editFormData.dealer)
+    // First try to filter by merk and dealer
+    if (editFormData.merk && editFormData.dealer) {
+      const filtered = spvList.filter(
+        (spv) => spv.isActive && spv.merk === editFormData.merk && spv.dealer === editFormData.dealer,
+      )
+      if (filtered.length > 0) return filtered
+    }
+    // If no match, show all active SPV
+    return spvList.filter((spv) => spv.isActive)
   }, [spvList, editFormData.merk, editFormData.dealer])
 
   useEffect(() => {
@@ -113,10 +135,12 @@ export default function AdminSalesPage() {
       setIsLoading(true)
       try {
         const salesData = await userStore.getByRole("sales")
-        setSalesList(salesData)
+        const uniqueSales = salesData.filter((s, index, self) => index === self.findIndex((t) => t.id === s.id))
+        setSalesList(uniqueSales)
 
         const spvData = await userStore.getByRole("spv")
-        setSpvList(spvData)
+        const uniqueSpv = spvData.filter((s, index, self) => index === self.findIndex((t) => t.id === s.id))
+        setSpvList(uniqueSpv)
 
         const dealers = await dealerStore.getAll()
         setDbDealers(Array.isArray(dealers) ? dealers : [])
@@ -199,7 +223,7 @@ export default function AdminSalesPage() {
     try {
       const username = generateUsername(addFormData.namaLengkap)
 
-      const selectedSpv = addFilteredSpvList.find((s) => s.id === addFormData.spvId)
+      const selectedSpv = spvList.find((s) => s.id === addFormData.spvId)
 
       const newSales: User = {
         id: crypto.randomUUID(),
@@ -225,9 +249,9 @@ export default function AdminSalesPage() {
       })
 
       setShowAddDialog(false)
-      // Fetch updated sales list after adding a new sales
       const salesData = await userStore.getByRole("sales")
-      setSalesList(salesData)
+      const uniqueSales = salesData.filter((s, index, self) => index === self.findIndex((t) => t.id === s.id))
+      setSalesList(uniqueSales)
     } catch (error) {
       console.error("Error adding sales:", error)
       toast({
@@ -257,7 +281,7 @@ export default function AdminSalesPage() {
     }
 
     try {
-      const selectedSpv = editFilteredSpvList.find((s) => s.id === editFormData.spvId)
+      const selectedSpv = spvList.find((s) => s.id === editFormData.spvId)
 
       await userStore.update(selectedSales.id, {
         namaLengkap: editFormData.namaLengkap.toUpperCase(),
@@ -266,8 +290,8 @@ export default function AdminSalesPage() {
         dealer: editFormData.dealer,
         password: editFormData.password,
         isActive: editFormData.isActive,
-        spvId: editFormData.spvId || null,
-        spvName: selectedSpv ? selectedSpv.namaLengkap : null,
+        spvId: editFormData.spvId || "",
+        spvName: selectedSpv ? selectedSpv.namaLengkap : "",
       })
 
       toast({
@@ -276,9 +300,9 @@ export default function AdminSalesPage() {
       })
 
       setShowEditDialog(false)
-      // Fetch updated sales list after editing a sales
       const salesData = await userStore.getByRole("sales")
-      setSalesList(salesData)
+      const uniqueSales = salesData.filter((s, index, self) => index === self.findIndex((t) => t.id === s.id))
+      setSalesList(uniqueSales)
     } catch (error) {
       console.error("Error updating sales:", error)
       toast({
@@ -304,9 +328,9 @@ export default function AdminSalesPage() {
       })
 
       setShowDeleteDialog(false)
-      // Fetch updated sales list after deleting a sales
       const salesData = await userStore.getByRole("sales")
-      setSalesList(salesData)
+      const uniqueSales = salesData.filter((s, index, self) => index === self.findIndex((t) => t.id === s.id))
+      setSalesList(uniqueSales)
     } catch (error) {
       console.error("Error deleting sales:", error)
       toast({
@@ -319,15 +343,15 @@ export default function AdminSalesPage() {
     }
   }
 
-  const getSpvName = (spvId?: string) => {
-    if (!spvId) return "-"
-    const spv = spvList.find((s) => s.id === spvId)
-    if (!spv && spvId) {
-      // Check if spvId is actually already a name
-      const spvByName = spvList.find((s) => s.namaLengkap === spvId)
-      if (spvByName) return spvByName.namaLengkap
+  const getSpvName = (sales: User) => {
+    // First try spvName field from the sales record
+    if (sales.spvName) return sales.spvName
+    // Then try lookup by spvId
+    if (sales.spvId) {
+      const name = spvNameMap.get(sales.spvId)
+      if (name) return name
     }
-    return spv?.namaLengkap || "-"
+    return "-"
   }
 
   return (
@@ -391,7 +415,7 @@ export default function AdminSalesPage() {
                           <TableCell>{sales.namaLengkap}</TableCell>
                           <TableCell>{getScalarMerk(sales.merk) || "-"}</TableCell>
                           <TableCell className="max-w-[200px] truncate">{sales.dealer || "-"}</TableCell>
-                          <TableCell>{sales.spvName || getSpvName(sales.spvId) || "-"}</TableCell>
+                          <TableCell>{getSpvName(sales)}</TableCell>
                           <TableCell>
                             <Badge variant={sales.isActive ? "default" : "outline"}>
                               {sales.isActive ? "Aktif" : "Nonaktif"}
@@ -489,19 +513,10 @@ export default function AdminSalesPage() {
                 <Label htmlFor="spvId">SPV (Atasan)</Label>
                 <Select
                   value={addFormData.spvId}
-                  onValueChange={(value) => setAddFormData({ ...addFormData, spvId: value })}
-                  disabled={!addFormData.merk || !addFormData.dealer}
+                  onValueChange={(value) => setAddFormData({ ...addFormData, spvId: value === "none" ? "" : value })}
                 >
                   <SelectTrigger>
-                    <SelectValue
-                      placeholder={
-                        !addFormData.merk || !addFormData.dealer
-                          ? "Pilih Merk & Dealer dulu"
-                          : addFilteredSpvList.length === 0
-                            ? "Tidak ada SPV untuk dealer ini"
-                            : "Pilih SPV (opsional)"
-                      }
-                    />
+                    <SelectValue placeholder={addFilteredSpvList.length === 0 ? "Tidak ada SPV" : "Pilih SPV"} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Tidak ada SPV</SelectItem>
@@ -563,8 +578,7 @@ export default function AdminSalesPage() {
                 Batal
               </Button>
               <Button type="submit" disabled={submitting}>
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Simpan
+                {submitting ? "Menyimpan..." : "Simpan"}
               </Button>
             </DialogFooter>
           </form>
@@ -586,6 +600,7 @@ export default function AdminSalesPage() {
                   id="edit-namaLengkap"
                   value={editFormData.namaLengkap}
                   onChange={(e) => setEditFormData({ ...editFormData, namaLengkap: e.target.value })}
+                  placeholder="Masukkan nama lengkap"
                   required
                 />
               </div>
@@ -595,6 +610,7 @@ export default function AdminSalesPage() {
                   id="edit-noHp"
                   value={editFormData.noHp}
                   onChange={(e) => setEditFormData({ ...editFormData, noHp: e.target.value })}
+                  placeholder="Masukkan nomor HP"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -639,20 +655,11 @@ export default function AdminSalesPage() {
               <div className="grid gap-2">
                 <Label htmlFor="edit-spvId">SPV (Atasan)</Label>
                 <Select
-                  value={editFormData.spvId}
-                  onValueChange={(value) => setEditFormData({ ...editFormData, spvId: value })}
-                  disabled={!editFormData.merk || !editFormData.dealer}
+                  value={editFormData.spvId || "none"}
+                  onValueChange={(value) => setEditFormData({ ...editFormData, spvId: value === "none" ? "" : value })}
                 >
                   <SelectTrigger>
-                    <SelectValue
-                      placeholder={
-                        !editFormData.merk || !editFormData.dealer
-                          ? "Pilih Merk & Dealer dulu"
-                          : editFilteredSpvList.length === 0
-                            ? "Tidak ada SPV untuk dealer ini"
-                            : "Pilih SPV (opsional)"
-                      }
-                    />
+                    <SelectValue placeholder={editFilteredSpvList.length === 0 ? "Tidak ada SPV" : "Pilih SPV"} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Tidak ada SPV</SelectItem>
@@ -672,6 +679,7 @@ export default function AdminSalesPage() {
                     type={showPassword ? "text" : "password"}
                     value={editFormData.password}
                     onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
+                    placeholder="Masukkan password"
                     required
                   />
                   <Button
@@ -713,33 +721,29 @@ export default function AdminSalesPage() {
                 Batal
               </Button>
               <Button type="submit" disabled={submitting}>
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Simpan
+                {submitting ? "Menyimpan..." : "Simpan"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Dialog */}
+      {/* Delete Confirmation Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-destructive" />
-              Hapus Sales
-            </DialogTitle>
+            <DialogTitle>Hapus Sales</DialogTitle>
             <DialogDescription>
-              Apakah Anda yakin ingin menghapus sales {selectedSales?.namaLengkap}? Tindakan ini tidak dapat dibatalkan.
+              Apakah Anda yakin ingin menghapus sales <strong>{selectedSales?.namaLengkap}</strong>? Tindakan ini tidak
+              dapat dibatalkan.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setShowDeleteDialog(false)}>
               Batal
             </Button>
-            <Button variant="destructive" onClick={confirmDelete} disabled={submitting}>
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Hapus
+            <Button type="button" variant="destructive" onClick={confirmDelete} disabled={submitting}>
+              {submitting ? "Menghapus..." : "Hapus"}
             </Button>
           </DialogFooter>
         </DialogContent>

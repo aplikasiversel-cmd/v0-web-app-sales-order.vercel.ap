@@ -1,10 +1,11 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { FileText, ClipboardList, CheckCircle2, XCircle, Clock } from "lucide-react"
+import { FileText, ClipboardList, CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight } from "lucide-react"
 import { DashboardHeader } from "@/components/dashboard/header"
 import { StatsCard } from "@/components/dashboard/stats-card"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth-context"
 import { orderStore, userStore } from "@/lib/data-store"
 import type { Order, OrderStatus, User } from "@/lib/types"
@@ -12,10 +13,13 @@ import { formatTanggal } from "@/lib/utils/format"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
+const ITEMS_PER_PAGE = 5
+
 export default function DashboardPage() {
   const { user } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
 
   const isSales = user?.role === "sales"
   const isSPV = user?.role === "spv"
@@ -38,7 +42,17 @@ export default function DashboardPage() {
           const salesIds = salesUnderSPV.filter((s: User) => s.spvId === user.id).map((s: User) => s.id)
           fetchedOrders = allOrders.filter((o) => salesIds.includes(o.salesId))
         } else if (user.role === "cmo") {
-          fetchedOrders = await orderStore.getByCmoId(user.id)
+          const allOrders = await orderStore.getAll()
+          const ordersArray = Array.isArray(allOrders) ? allOrders : []
+          fetchedOrders = ordersArray.filter((o) => {
+            // Match by ID
+            if (o.cmoId === user.id) return true
+            // Match by username (some orders may store username as cmoId)
+            if (o.cmoId === user.username) return true
+            // Match by name
+            if (o.cmoName && o.cmoName.toUpperCase() === user.namaLengkap.toUpperCase()) return true
+            return false
+          })
         } else if (user.role === "cmh") {
           fetchedOrders = await orderStore.getAll()
         } else {
@@ -59,6 +73,10 @@ export default function DashboardPage() {
   useEffect(() => {
     loadOrders()
   }, [loadOrders])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [orders.length])
 
   if (!user) return null
 
@@ -94,9 +112,11 @@ export default function DashboardPage() {
 
   const sortedOrders = [...orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
-  const recentOrders = sortedOrders.slice(0, Math.min(sortedOrders.length, 10))
-
   const totalOrders = orders.length
+  const totalPages = Math.ceil(totalOrders / ITEMS_PER_PAGE)
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = startIndex + ITEMS_PER_PAGE
+  const paginatedOrders = sortedOrders.slice(startIndex, endIndex)
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -154,23 +174,24 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Recent Orders - With Sales/CMO names */}
+        {/* Recent Orders - With Pagination */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Order Terbaru</CardTitle>
             <CardDescription>
-              {recentOrders.length} dari {totalOrders} order
+              Menampilkan {paginatedOrders.length > 0 ? startIndex + 1 : 0} - {Math.min(endIndex, totalOrders)} dari{" "}
+              {totalOrders} order
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {recentOrders.length === 0 ? (
+            {paginatedOrders.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <ClipboardList className="h-12 w-12 mx-auto mb-3 opacity-50" />
                 <p>Belum ada order</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {recentOrders.map((order) => (
+                {paginatedOrders.map((order) => (
                   <div
                     key={order.id}
                     className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg bg-muted/30 gap-2"
@@ -193,6 +214,32 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Sebelumnya
+                </Button>
+                <span className="text-sm text-muted-foreground px-2">
+                  Halaman {currentPage} dari {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Selanjutnya
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
               </div>
             )}
           </CardContent>

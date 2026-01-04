@@ -74,7 +74,7 @@ function mapDbUserToUser(dbUser: any): User {
     password: dbUser.password,
     namaLengkap: dbUser.namaLengkap || dbUser.nama_lengkap,
     role: dbUser.role,
-    nomorHp: dbUser.nomorHp || dbUser.no_hp || "",
+    noHp: dbUser.noHp || dbUser.nomorHp || dbUser.no_hp || "",
     merk: dbUser.merk,
     dealer: dbUser.dealer,
     jabatan: dbUser.jabatan,
@@ -82,6 +82,10 @@ function mapDbUserToUser(dbUser: any): User {
     passwordLastChanged: dbUser.passwordLastChanged || dbUser.password_last_changed,
     isActive: dbUser.isActive ?? dbUser.is_active ?? true,
     createdAt: dbUser.createdAt || dbUser.created_at,
+    spvId: dbUser.spvId || dbUser.spv_id || "",
+    spvName: dbUser.spvName || dbUser.spv_name || "",
+    cmhId: dbUser.cmhId || dbUser.cmh_id || "",
+    cmhName: dbUser.cmhName || dbUser.cmh_name || "",
   }
 }
 
@@ -129,7 +133,7 @@ export const userStore = {
       password: userData.password,
       namaLengkap: userData.namaLengkap,
       role: userData.role,
-      nomorHp: userData.nomorHp || (userData as any).noHp,
+      noHp: userData.noHp || (userData as any).nomorHp,
       merk: userData.merk,
       dealer: userData.dealer,
       jabatan: userData.jabatan,
