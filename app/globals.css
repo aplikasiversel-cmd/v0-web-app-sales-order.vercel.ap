@@ -135,57 +135,42 @@
   body {
     @apply bg-background text-foreground;
   }
-
-  /* Smooth scrolling */
   html {
     scroll-behavior: smooth;
   }
-
-  /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
-
   ::-webkit-scrollbar-track {
     background: transparent;
   }
-
   ::-webkit-scrollbar-thumb {
     background: oklch(0.7 0.02 250);
     border-radius: 3px;
   }
-
   ::-webkit-scrollbar-thumb:hover {
     background: oklch(0.5 0.02 250);
   }
-
   .dark ::-webkit-scrollbar-thumb {
     background: oklch(0.4 0.02 250);
   }
-
   .dark ::-webkit-scrollbar-thumb:hover {
     background: oklch(0.5 0.02 250);
   }
 }
 
 @layer utilities {
-  /* Touch-friendly tap targets */
   .touch-target {
     min-height: 44px;
     min-width: 44px;
   }
-
-  /* Safe area padding for mobile */
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom, 16px);
   }
-
   .safe-top {
     padding-top: env(safe-area-inset-top, 0);
   }
-
-  /* Improved focus styles */
   .focus-ring {
     outline: none;
   }
@@ -194,7 +179,6 @@
   }
 }
 
-/* Fade in animation */
 .fade-in {
   animation: fadeIn 0.3s ease-in-out;
 }
@@ -210,7 +194,6 @@
   }
 }
 
-/* Slide in animation */
 .slide-in {
   animation: slideIn 0.3s ease-out;
 }
@@ -226,7 +209,6 @@
   }
 }
 
-/* Pulse animation for loading */
 .pulse-soft {
   animation: pulseSoft 2s ease-in-out infinite;
 }
@@ -241,41 +223,32 @@
   }
 }
 
-/* Mobile-specific improvements */
 @media (max-width: 640px) {
-  /* Larger touch targets on mobile */
   button,
   [role="button"],
   a {
     min-height: 40px;
   }
-
-  /* Better text sizing */
   html {
     font-size: 15px;
   }
-
-  /* Prevent horizontal scroll */
   body {
     overflow-x: hidden;
   }
 }
 
-/* Tablet improvements */
 @media (min-width: 641px) and (max-width: 1024px) {
   html {
     font-size: 15px;
   }
 }
 
-/* Desktop improvements */
 @media (min-width: 1025px) {
   html {
     font-size: 16px;
   }
 }
 
-/* Print styles */
 @media print {
   .no-print {
     display: none !important;

@@ -36,8 +36,10 @@ interface CacheEntry {
 }
 
 const cache: Map<string, CacheEntry> = new Map()
-const CACHE_TTL = 300000 // 5 minutes cache TTL
-const QUERY_CACHE_TTL = 120000 // 2 minutes for queries
+
+const CACHE_TTL = 604800000 // 1 week cache TTL
+const QUERY_CACHE_TTL = 604800000 // 1 week for queries
+const DOC_CACHE_TTL = 86400000 // 24 hours for individual documents
 
 function getCacheKey(type: string, ...args: string[]): string {
   return `${type}:${args.join(":")}`
@@ -48,16 +50,40 @@ function getFromCache(key: string, ttl: number = CACHE_TTL): any | null {
   if (entry && Date.now() - entry.timestamp < ttl) {
     return entry.data
   }
-  cache.delete(key)
   return null
+}
+
+function getStaleCache(key: string): any | null {
+  const entry = cache.get(key)
+  return entry ? entry.data : null
 }
 
 function setCache(key: string, data: any): void {
   cache.set(key, { data, timestamp: Date.now() })
 }
 
+let isRateLimited = false
+let rateLimitUntil = 0
+const RATE_LIMIT_COOLDOWN = 1800000 // 30 minutes cooldown after 429
+
+function checkRateLimited(): boolean {
+  if (isRateLimited && Date.now() < rateLimitUntil) {
+    return true
+  }
+  if (isRateLimited && Date.now() >= rateLimitUntil) {
+    isRateLimited = false
+  }
+  return false
+}
+
+function setRateLimited(): void {
+  isRateLimited = true
+  rateLimitUntil = Date.now() + RATE_LIMIT_COOLDOWN
+  console.log(`[v0] Firebase rate limited, will retry after ${RATE_LIMIT_COOLDOWN / 60000} minutes`)
+}
+
 let lastRequestTime = 0
-const MIN_REQUEST_INTERVAL = 500
+const MIN_REQUEST_INTERVAL = 2000 // 2 seconds minimum between requests
 
 async function waitForRateLimit(): Promise<void> {
   const now = Date.now()
@@ -168,13 +194,7 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2,
       const response = await fetchWithTimeout(url, options, timeoutMs)
 
       if (response.status === 429) {
-        // On 429, wait longer and retry only once more
-        if (attempt < maxRetries) {
-          const delay = 5000 // Wait 5 seconds
-          console.log(`[v0] Rate limited (429), waiting ${delay}ms before retry`)
-          await new Promise((resolve) => setTimeout(resolve, delay))
-          continue
-        }
+        setRateLimited()
         // Return the 429 response to let caller handle it with cache
         return response
       }
@@ -196,15 +216,29 @@ export const firestoreREST = {
   // Get all documents in a collection with pagination support
   async getCollection(collectionName: string): Promise<any[]> {
     const cacheKey = getCacheKey("collection", collectionName)
+
     const cached = getFromCache(cacheKey, CACHE_TTL)
     if (cached !== null) {
+      console.log(`[v0] getCollection ${collectionName} - from cache: ${cached.length} docs`)
       return cached
+    }
+
+    if (checkRateLimited()) {
+      const staleCache = getStaleCache(cacheKey)
+      if (staleCache) {
+        console.log(`[v0] getCollection ${collectionName} - from stale cache (rate limited): ${staleCache.length} docs`)
+        return staleCache
+      }
+      console.log(`[v0] getCollection ${collectionName} - rate limited, no cache`)
+      return []
     }
 
     try {
       const apiKeyParam = getApiKeyParam()
       const allDocuments: any[] = []
       let nextPageToken: string | null = null
+
+      console.log(`[v0] getCollection ${collectionName} - fetching from Firebase`)
 
       do {
         const params = new URLSearchParams()
@@ -220,9 +254,14 @@ export const firestoreREST = {
         })
 
         if (!response.ok) {
-          const staleCache = cache.get(cacheKey)
+          console.log(`[v0] getCollection ${collectionName} - error status: ${response.status}`)
+          if (response.status === 429) {
+            setRateLimited()
+          }
+          const staleCache = getStaleCache(cacheKey)
           if (staleCache) {
-            return staleCache.data
+            console.log(`[v0] getCollection ${collectionName} - from stale cache (error): ${staleCache.length} docs`)
+            return staleCache
           }
           return []
         }
@@ -233,13 +272,16 @@ export const firestoreREST = {
         nextPageToken = data.nextPageToken || null
       } while (nextPageToken)
 
+      console.log(`[v0] getCollection ${collectionName} - fetched ${allDocuments.length} docs`)
       setCache(cacheKey, allDocuments)
       return allDocuments
     } catch (error: any) {
-      console.error(`[v0] Error getting collection ${collectionName}:`, error.message)
-      // Return stale cache if available
-      const staleCache = cache.get(cacheKey)
-      if (staleCache) return staleCache.data
+      console.error(`[v0] getCollection ${collectionName} - error:`, error.message)
+      const staleCache = getStaleCache(cacheKey)
+      if (staleCache) {
+        console.log(`[v0] getCollection ${collectionName} - from stale cache (exception): ${staleCache.length} docs`)
+        return staleCache
+      }
       return []
     }
   },
@@ -247,9 +289,15 @@ export const firestoreREST = {
   // Get a single document
   async getDocument(collectionName: string, docId: string): Promise<any | null> {
     const cacheKey = getCacheKey("doc", collectionName, docId)
-    const cached = getFromCache(cacheKey, CACHE_TTL)
+    const cached = getFromCache(cacheKey, DOC_CACHE_TTL)
     if (cached !== null) {
       return cached
+    }
+
+    if (checkRateLimited()) {
+      const staleCache = getStaleCache(cacheKey)
+      if (staleCache) return staleCache
+      return null
     }
 
     try {
@@ -263,9 +311,10 @@ export const firestoreREST = {
 
       if (!response.ok) {
         if (response.status === 404) return null
+        if (response.status === 429) setRateLimited()
         // Return stale cache on error
-        const staleCache = cache.get(cacheKey)
-        if (staleCache) return staleCache.data
+        const staleCache = getStaleCache(cacheKey)
+        if (staleCache) return staleCache
         return null
       }
 
@@ -275,14 +324,19 @@ export const firestoreREST = {
       return result
     } catch (error: any) {
       console.error(`[v0] Error getting document ${collectionName}/${docId}:`, error.message)
-      const staleCache = cache.get(cacheKey)
-      if (staleCache) return staleCache.data
+      const staleCache = getStaleCache(cacheKey)
+      if (staleCache) return staleCache
       return null
     }
   },
 
   // Create or update a document
   async setDocument(collectionName: string, docId: string, data: Record<string, any>): Promise<any | null> {
+    if (checkRateLimited()) {
+      console.log(`[v0] Skipping setDocument for ${collectionName}/${docId} (rate limited)`)
+      return { id: docId, ...data }
+    }
+
     try {
       const apiKeyParam = getApiKeyParam()
       const url = `${getBaseUrl()}/${collectionName}/${docId}${apiKeyParam ? `?${apiKeyParam}` : ""}`
@@ -299,6 +353,11 @@ export const firestoreREST = {
       )
 
       if (!response.ok) {
+        if (response.status === 429) {
+          setRateLimited()
+          // Return optimistically
+          return { id: docId, ...data }
+        }
         const errorText = await response.text()
         console.error(`[v0] Firestore SET error: ${response.status}`, errorText)
         throw new Error(`Failed to set document: ${response.status}`)
@@ -319,6 +378,11 @@ export const firestoreREST = {
 
   // Update specific fields
   async updateDocument(collectionName: string, docId: string, updates: Record<string, any>): Promise<boolean> {
+    if (checkRateLimited()) {
+      console.log(`[v0] Skipping updateDocument for ${collectionName}/${docId} (rate limited)`)
+      return true
+    }
+
     try {
       const updateMask = Object.keys(updates)
         .map((k) => `updateMask.fieldPaths=${k}`)
@@ -339,6 +403,10 @@ export const firestoreREST = {
       )
 
       if (!response.ok) {
+        if (response.status === 429) {
+          setRateLimited()
+          return true // Return optimistically
+        }
         console.error(`[v0] Firestore UPDATE error: ${response.status}`)
         return false
       }
@@ -355,6 +423,11 @@ export const firestoreREST = {
 
   // Delete a document
   async deleteDocument(collectionName: string, docId: string): Promise<boolean> {
+    if (checkRateLimited()) {
+      console.log(`[v0] Skipping deleteDocument for ${collectionName}/${docId} (rate limited)`)
+      return true
+    }
+
     try {
       const apiKeyParam = getApiKeyParam()
       const url = `${getBaseUrl()}/${collectionName}/${docId}${apiKeyParam ? `?${apiKeyParam}` : ""}`
@@ -365,6 +438,10 @@ export const firestoreREST = {
       })
 
       if (!response.ok && response.status !== 404) {
+        if (response.status === 429) {
+          setRateLimited()
+          return true // Return optimistically
+        }
         console.error(`[v0] Firestore DELETE error: ${response.status}`)
         return false
       }
@@ -380,28 +457,59 @@ export const firestoreREST = {
   },
 
   // Query documents with simple where clause
-  async queryCollection(collectionName: string, fieldPath: string, op: string, value: any): Promise<any[]> {
-    const cacheKey = getCacheKey("query", collectionName, fieldPath, op, String(value))
+  async queryCollection(
+    collectionName: string,
+    fieldPath: string,
+    op: string,
+    value: any,
+    limit?: number,
+  ): Promise<any[]> {
+    const cacheKey = getCacheKey("query", collectionName, fieldPath, op, String(value), String(limit || ""))
     const cached = getFromCache(cacheKey, QUERY_CACHE_TTL)
     if (cached !== null) {
       return cached
+    }
+
+    if (checkRateLimited()) {
+      const staleCache = getStaleCache(cacheKey)
+      if (staleCache) return staleCache
+      return []
     }
 
     try {
       const apiKeyParam = getApiKeyParam()
       const url = `${getBaseUrl()}:runQuery${apiKeyParam ? `?${apiKeyParam}` : ""}`
 
-      const structuredQuery = {
+      console.log(`[v0] Firestore QUERY: ${collectionName} ${fieldPath} ${op} ${value}`)
+
+      const structuredQuery: any = {
         structuredQuery: {
           from: [{ collectionId: collectionName }],
           where: {
             fieldFilter: {
               field: { fieldPath },
-              op: op === "==" ? "EQUAL" : op === "!=" ? "NOT_EQUAL" : "EQUAL",
+              op:
+                op === "=="
+                  ? "EQUAL"
+                  : op === "!="
+                    ? "NOT_EQUAL"
+                    : op === ">="
+                      ? "GREATER_THAN_OR_EQUAL"
+                      : op === "<="
+                        ? "LESS_THAN_OR_EQUAL"
+                        : op === ">"
+                          ? "GREATER_THAN"
+                          : op === "<"
+                            ? "LESS_THAN"
+                            : "EQUAL",
               value: toFirestoreValue(value),
             },
           },
         },
+      }
+
+      if (limit && limit > 0) {
+        structuredQuery.structuredQuery.limit = { value: limit }
       }
 
       const response = await fetchWithRetry(url, {
@@ -411,26 +519,38 @@ export const firestoreREST = {
       })
 
       if (!response.ok) {
-        const staleCache = cache.get(cacheKey)
-        if (staleCache) return staleCache.data
+        if (response.status === 429) setRateLimited()
+        const staleCache = getStaleCache(cacheKey)
+        if (staleCache) return staleCache
         return []
       }
 
       const data = await response.json()
       const results = data.filter((item: any) => item.document).map((item: any) => firestoreDocToObject(item.document))
 
+      console.log(`[v0] Firestore QUERY results: ${results.length} documents`)
+
       setCache(cacheKey, results)
       return results
     } catch (error: any) {
       console.error(`[v0] Error querying collection ${collectionName}:`, error.message)
-      const staleCache = cache.get(cacheKey)
-      if (staleCache) return staleCache.data
+      const staleCache = getStaleCache(cacheKey)
+      if (staleCache) return staleCache
       return []
     }
   },
 
   clearCache() {
     cache.clear()
+  },
+
+  isRateLimited(): boolean {
+    return checkRateLimited()
+  },
+
+  resetRateLimit(): void {
+    isRateLimited = false
+    rateLimitUntil = 0
   },
 }
 

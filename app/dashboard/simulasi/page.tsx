@@ -82,6 +82,16 @@ export default function SimulasiPage() {
     )
   }, [formData.merk, formData.jenisPembiayaan, programs])
 
+  const uniqueCmoList = useMemo(() => {
+    const seen = new Set<string>()
+    return cmoList.filter((cmo) => {
+      // Filter by username to remove duplicates
+      if (seen.has(cmo.username)) return false
+      seen.add(cmo.username)
+      return cmo.isActive
+    })
+  }, [cmoList])
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -631,7 +641,7 @@ export default function SimulasiPage() {
                         <SelectValue placeholder="Pilih CMO" />
                       </SelectTrigger>
                       <SelectContent>
-                        {cmoList.map((cmo) => (
+                        {uniqueCmoList.map((cmo) => (
                           <SelectItem key={cmo.id} value={cmo.id}>
                             {cmo.namaLengkap}
                           </SelectItem>

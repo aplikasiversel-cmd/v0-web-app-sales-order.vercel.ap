@@ -40,20 +40,67 @@ export default function StatistikPage() {
         setLoading(true)
         let fetchedOrders: Order[] = []
 
+        const allOrders = await orderStore.getAll()
+        console.log("[v0] Statistik - allOrders count:", allOrders.length)
+        console.log("[v0] Statistik - user:", {
+          id: user.id,
+          username: user.username,
+          role: user.role,
+          namaLengkap: user.namaLengkap,
+        })
+
         if (user.role === "sales") {
-          fetchedOrders = await orderStore.getBySalesId(user.id)
+          // Sales hanya melihat order miliknya
+          fetchedOrders = allOrders.filter(
+            (o: Order) =>
+              o.salesId === user.id ||
+              o.salesId === user.username ||
+              o.salesName === user.namaLengkap ||
+              o.salesName?.toLowerCase() === user.namaLengkap?.toLowerCase(),
+          )
+          console.log("[v0] Statistik - sales filtered orders:", fetchedOrders.length)
         } else if (user.role === "cmo") {
-          fetchedOrders = await orderStore.getByCmoId(user.id)
+          // CMO melihat order yang ditugaskan kepadanya
+          fetchedOrders = allOrders.filter(
+            (o: Order) =>
+              o.cmoId === user.id ||
+              o.cmoId === user.username ||
+              o.cmoName === user.namaLengkap ||
+              o.cmoName?.toLowerCase() === user.namaLengkap?.toLowerCase(),
+          )
+          console.log("[v0] Statistik - cmo filtered orders:", fetchedOrders.length)
         } else if (user.role === "spv") {
+          // SPV melihat order dari sales yang ditugaskan kepadanya
           const allSales = await userStore.getByRole("sales")
-          const salesUnderSPV = allSales.filter((s: User) => s.spvId === user.id)
+          console.log("[v0] Statistik - allSales count:", allSales.length)
+
+          const salesUnderSPV = allSales.filter(
+            (s: User) =>
+              s.spvId === user.id ||
+              s.spvId === user.username ||
+              s.spvName === user.namaLengkap ||
+              s.spvName?.toLowerCase() === user.namaLengkap?.toLowerCase(),
+          )
+          console.log(
+            "[v0] Statistik - salesUnderSPV:",
+            salesUnderSPV.map((s) => ({ id: s.id, nama: s.namaLengkap, spvId: s.spvId })),
+          )
+
           const salesIds = salesUnderSPV.map((s: User) => s.id)
+          const salesUsernames = salesUnderSPV.map((s: User) => s.username)
+          const salesNames = salesUnderSPV.map((s: User) => s.namaLengkap?.toLowerCase())
           setSalesIdsUnderSPV(salesIds)
 
-          const allOrders = await orderStore.getAll()
-          fetchedOrders = allOrders.filter((order: Order) => salesIds.includes(order.salesId))
+          fetchedOrders = allOrders.filter(
+            (order: Order) =>
+              salesIds.includes(order.salesId) ||
+              salesUsernames.includes(order.salesId) ||
+              salesNames.includes(order.salesName?.toLowerCase()),
+          )
+          console.log("[v0] Statistik - spv filtered orders:", fetchedOrders.length)
         } else {
-          fetchedOrders = await orderStore.getAll()
+          // Admin dan CMH melihat semua order
+          fetchedOrders = allOrders
         }
 
         setOrders(Array.isArray(fetchedOrders) ? fetchedOrders : [])

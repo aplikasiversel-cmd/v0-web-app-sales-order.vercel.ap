@@ -13,7 +13,17 @@ export async function getUserById(id: string) {
 
 export async function getUserByUsername(username: string) {
   const usernameLC = username.toLowerCase()
-  const users = await firestoreREST.queryCollection(COLLECTIONS.USERS, "username", "==", usernameLC)
+  const users = await firestoreREST.queryCollection(COLLECTIONS.USERS, "username", "==", usernameLC, 1)
+
+  if (users.length > 0) {
+    console.log("[v0] Found user:", {
+      username: users[0].username,
+      role: users[0].role,
+      hasPassword: !!users[0].password,
+      passwordPreview: users[0].password ? users[0].password.substring(0, 3) + "***" : "none",
+    })
+  }
+
   return users.length > 0 ? users[0] : null
 }
 
@@ -68,19 +78,20 @@ export async function updateUser(id: string, updates: Record<string, any>) {
     updatedAt: new Date().toISOString(),
   }
 
-  if (updates.namaLengkap !== undefined) updateData.namaLengkap = updates.namaLengkap
-  if (updates.nomorHp !== undefined) updateData.nomorHp = updates.nomorHp
-  if (updates.merk !== undefined) updateData.merk = updates.merk
-  if (updates.dealer !== undefined) updateData.dealer = updates.dealer
-  if (updates.password !== undefined) updateData.password = updates.password
+  if (updates.namaLengkap !== undefined && updates.namaLengkap !== null) updateData.namaLengkap = updates.namaLengkap
+  if (updates.nomorHp !== undefined && updates.nomorHp !== null) updateData.nomorHp = updates.nomorHp
+  if (updates.merk !== undefined && updates.merk !== null) updateData.merk = updates.merk
+  if (updates.dealer !== undefined && updates.dealer !== null) updateData.dealer = updates.dealer
+  if (updates.password !== undefined && updates.password !== null) updateData.password = updates.password
   if (updates.isActive !== undefined) updateData.isActive = updates.isActive
   if (updates.isFirstLogin !== undefined) updateData.isFirstLogin = updates.isFirstLogin
-  if (updates.passwordLastChanged !== undefined) updateData.passwordLastChanged = updates.passwordLastChanged
-  if (updates.jabatan !== undefined) updateData.jabatan = updates.jabatan
-  if (updates.cmhId !== undefined) updateData.cmhId = updates.cmhId
-  if (updates.cmhName !== undefined) updateData.cmhName = updates.cmhName
-  if (updates.spvId !== undefined) updateData.spvId = updates.spvId
-  if (updates.spvName !== undefined) updateData.spvName = updates.spvName
+  if (updates.passwordLastChanged !== undefined && updates.passwordLastChanged !== null)
+    updateData.passwordLastChanged = updates.passwordLastChanged
+  if (updates.jabatan !== undefined && updates.jabatan !== null) updateData.jabatan = updates.jabatan
+  if (updates.cmhId !== undefined && updates.cmhId !== null) updateData.cmhId = updates.cmhId
+  if (updates.cmhName !== undefined && updates.cmhName !== null) updateData.cmhName = updates.cmhName
+  if (updates.spvId !== undefined && updates.spvId !== null) updateData.spvId = updates.spvId
+  if (updates.spvName !== undefined && updates.spvName !== null) updateData.spvName = updates.spvName
 
   await firestoreREST.updateDocument(COLLECTIONS.USERS, id, updateData)
   return await getUserById(id)
@@ -223,27 +234,41 @@ export async function deleteProgram(id: string) {
 // ==================== ORDERS ====================
 
 export async function getOrders() {
-  const orders = await firestoreREST.getCollection(COLLECTIONS.ORDERS)
-  const allNotes = await firestoreREST.getCollection(COLLECTIONS.ORDER_NOTES)
+  console.log("[v0] getOrders - starting")
+  try {
+    const orders = await firestoreREST.getCollection(COLLECTIONS.ORDERS)
+    console.log("[v0] getOrders - orders count:", orders?.length || 0)
 
-  // Map notes to orders
-  return orders.map((order: any) => {
-    const orderNotes = allNotes.filter((n: any) => n.orderId === order.id)
-    // Sort notes by createdAt ascending
-    orderNotes.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-    return {
-      ...order,
-      notes: orderNotes.map((n: any) => ({
-        id: n.id,
-        userId: n.userId,
-        userName: n.userName,
-        role: n.role,
-        note: n.note,
-        status: n.status,
-        createdAt: n.createdAt,
-      })),
+    if (!orders || orders.length === 0) {
+      console.log("[v0] getOrders - no orders found")
+      return []
     }
-  })
+
+    const allNotes = await firestoreREST.getCollection(COLLECTIONS.ORDER_NOTES)
+    console.log("[v0] getOrders - notes count:", allNotes?.length || 0)
+
+    // Map notes to orders
+    return orders.map((order: any) => {
+      const orderNotes = allNotes.filter((n: any) => n.orderId === order.id)
+      // Sort notes by createdAt ascending
+      orderNotes.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      return {
+        ...order,
+        notes: orderNotes.map((n: any) => ({
+          id: n.id,
+          userId: n.userId,
+          userName: n.userName,
+          role: n.role,
+          note: n.note,
+          status: n.status,
+          createdAt: n.createdAt,
+        })),
+      }
+    })
+  } catch (error) {
+    console.error("[v0] getOrders - error:", error)
+    return []
+  }
 }
 
 export async function getOrderById(id: string) {
@@ -253,6 +278,19 @@ export async function getOrderById(id: string) {
   // Get notes
   const notes = await firestoreREST.queryCollection(COLLECTIONS.ORDER_NOTES, "orderId", "==", id)
   return { ...order, notes }
+}
+
+export async function getOrdersByCmoId(cmoId: string, cmoUsername?: string, cmoName?: string) {
+  try {
+    // Get all orders and filter by cmoId
+    const allOrders = await getOrders()
+    return allOrders.filter(
+      (order: any) => order.cmoId === cmoId || order.cmoName === cmoName || order.claimedBy === cmoId,
+    )
+  } catch (error) {
+    console.error("[Firebase] getOrdersByCmoId error:", error)
+    return []
+  }
 }
 
 export async function createOrder(orderData: Record<string, any>) {
@@ -320,6 +358,7 @@ export async function updateOrder(id: string, updates: Record<string, any>) {
     "catatanKhusus",
     "status",
     "hasilSlik",
+    "slikNote",
     "tanggalSurvey",
     "fotoSurvey",
     "claimedBy",
@@ -336,27 +375,25 @@ export async function updateOrder(id: string, updates: Record<string, any>) {
   ]
 
   for (const field of allowedFields) {
-    if (updates[field] !== undefined) {
+    if (updates[field] !== undefined && updates[field] !== null) {
       updateData[field] = updates[field]
     }
   }
 
-  if (updates.notes && Array.isArray(updates.notes)) {
-    // Get existing notes for this order
+  if (updates.notes && Array.isArray(updates.notes) && updates.notes.length > 0) {
     const existingNotes = await firestoreREST.queryCollection(COLLECTIONS.ORDER_NOTES, "orderId", "==", id)
     const existingNoteIds = new Set(existingNotes.map((n: any) => n.id))
 
-    // Add only new notes
     for (const note of updates.notes) {
-      if (!existingNoteIds.has(note.id)) {
+      if (note && note.id && !existingNoteIds.has(note.id)) {
         await firestoreREST.setDocument(COLLECTIONS.ORDER_NOTES, note.id, {
           orderId: id,
-          userId: note.userId,
-          userName: note.userName,
-          role: note.role,
-          note: note.note,
-          status: note.status,
-          createdAt: note.createdAt,
+          userId: note.userId || "",
+          userName: note.userName || "",
+          role: note.role || "",
+          note: note.note || "",
+          status: note.status || "",
+          createdAt: note.createdAt || new Date().toISOString(),
         })
       }
     }
@@ -382,6 +419,7 @@ export async function createOrderNote(noteData: {
   userName: string
   note: string
   status?: string
+  role?: string // Add role parameter
 }) {
   const id = uuidv4()
   const now = new Date().toISOString()
@@ -390,6 +428,7 @@ export async function createOrderNote(noteData: {
     orderId: noteData.orderId,
     userId: noteData.userId,
     userName: noteData.userName,
+    role: noteData.role || "", // Save role to notes
     note: noteData.note,
     status: noteData.status || null,
     createdAt: now,
@@ -478,11 +517,44 @@ export async function deleteAktivitas(id: string) {
 
 // ==================== MERKS ====================
 
+export const DEFAULT_MERKS = [
+  "Honda",
+  "Daihatsu",
+  "Mitsubishi",
+  "Suzuki",
+  "Toyota",
+  "Chery",
+  "Hyundai",
+  "Wuling",
+  "BYD",
+  "Isuzu",
+  "Nissan",
+  "Mazda",
+  "Kia",
+  "Hino",
+  "Citroen",
+  "JAECOO",
+]
+
 export async function getMerks() {
-  return await firestoreREST.getCollection(COLLECTIONS.MERKS)
+  return DEFAULT_MERKS.map((nama) => ({
+    id: nama.toLowerCase().replace(/\s+/g, "-"),
+    nama: nama,
+    isDefault: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  }))
 }
 
 export async function createMerk(nama: string, isDefault = false) {
+  if (isDefault) {
+    return {
+      id: nama.toLowerCase().replace(/\s+/g, "-"),
+      nama,
+      isDefault: true,
+    }
+  }
+
   const id = uuidv4()
   const now = new Date().toISOString()
 
@@ -490,6 +562,7 @@ export async function createMerk(nama: string, isDefault = false) {
     nama,
     isDefault,
     createdAt: now,
+    updatedAt: now,
   }
 
   await firestoreREST.setDocument(COLLECTIONS.MERKS, id, merk)
@@ -554,6 +627,28 @@ export async function getNotifications(userId?: string) {
   return await firestoreREST.getCollection(COLLECTIONS.NOTIFICATIONS)
 }
 
+export async function getNotificationsByUserId(userId: string) {
+  try {
+    if (!userId) return []
+    const notifications = await firestoreREST.queryCollection(COLLECTIONS.NOTIFICATIONS, "userId", "==", userId)
+    return notifications.map((n: any) => ({
+      id: n.id,
+      userId: n.userId,
+      title: n.title,
+      message: n.message,
+      type: n.type,
+      isRead: n.isRead ?? false,
+      referenceId: n.relatedOrderId || n.referenceId,
+      createdAt: n.createdAt,
+      createdById: n.createdById,
+      createdByName: n.createdByName,
+    }))
+  } catch (error) {
+    console.error("[Firebase] getNotificationsByUserId error:", error)
+    return []
+  }
+}
+
 export async function createNotification(notificationData: {
   userId: string
   title: string
@@ -595,14 +690,23 @@ export async function markAllNotificationsAsRead(userId: string) {
 
 // ==================== INITIALIZATION ====================
 
-let initializationPromise: Promise<{ success: boolean; error?: any; cached?: boolean }> | null = null
+let isAlreadyInitialized = false
+let initializationPromise: Promise<any> | null = null
 let lastInitTime = 0
-const INIT_COOLDOWN = 300000 // 5 minutes cooldown
+const INIT_COOLDOWN = 300000 // 5 minutes
 
 export async function initializeDefaultData() {
   const now = Date.now()
-  if (now - lastInitTime < INIT_COOLDOWN) {
+
+  if (isAlreadyInitialized || now - lastInitTime < INIT_COOLDOWN) {
     return { success: true, cached: true }
+  }
+
+  if (typeof window !== "undefined") {
+    if (localStorage.getItem("db_init_done") === "true") {
+      isAlreadyInitialized = true
+      return { success: true, cached: true }
+    }
   }
 
   if (initializationPromise) {
@@ -613,14 +717,16 @@ export async function initializeDefaultData() {
     try {
       lastInitTime = Date.now()
 
-      // Check if admin exists
       const adminUser = await getUserByUsername("admin")
 
       if (adminUser) {
+        isAlreadyInitialized = true
+        if (typeof window !== "undefined") {
+          localStorage.setItem("db_init_done", "true")
+        }
         return { success: true, cached: true }
       }
 
-      // Create default admin
       await createUser({
         username: "admin",
         password: "Admin@123",
@@ -629,75 +735,6 @@ export async function initializeDefaultData() {
         isActive: true,
       })
 
-      const cmo1 = await getUserByUsername("25029956")
-      if (!cmo1) {
-        await createUser({
-          username: "25029956",
-          password: "cmo1234",
-          namaLengkap: "FAISAL FAJAR",
-          role: "cmo",
-          jabatan: "CMO",
-          isActive: true,
-        })
-      }
-
-      const cmo2 = await getUserByUsername("24028259")
-      if (!cmo2) {
-        await createUser({
-          username: "24028259",
-          password: "cmo1234",
-          namaLengkap: "ROBBY ANGGARA SASMITA",
-          role: "cmo",
-          jabatan: "CMO",
-          isActive: true,
-        })
-      }
-
-      const cmh1 = await getUserByUsername("23025309")
-      if (!cmh1) {
-        await createUser({
-          username: "23025309",
-          password: "cmh1234",
-          namaLengkap: "M SAHID",
-          role: "cmh",
-          jabatan: "CMH",
-          isActive: true,
-        })
-      }
-
-      // Check if merks exist
-      const merks = await getMerks()
-
-      if (merks.length === 0) {
-        const defaultMerks = [
-          "Honda",
-          "Daihatsu",
-          "Mitsubishi",
-          "Suzuki",
-          "Toyota",
-          "Chery",
-          "Hyundai",
-          "Wuling",
-          "BYD",
-          "Isuzu",
-          "Nissan",
-          "Mazda",
-          "Kia",
-          "Hino",
-          "Citroen",
-          "JAECOO",
-        ]
-
-        // Create merks in batches of 4 with delay between batches
-        for (let i = 0; i < defaultMerks.length; i += 4) {
-          const batch = defaultMerks.slice(i, i + 4)
-          await Promise.all(batch.map((nama) => createMerk(nama, true)))
-          if (i + 4 < defaultMerks.length) {
-            await new Promise((resolve) => setTimeout(resolve, 500)) // 500ms delay between batches
-          }
-        }
-      }
-
       return { success: true }
     } catch (error) {
       console.error("Error initializing default data:", error)
@@ -705,7 +742,7 @@ export async function initializeDefaultData() {
     } finally {
       setTimeout(() => {
         initializationPromise = null
-      }, 30000) // Keep promise cached for 30 seconds
+      }, 60000) // Keep promise cached for 60 seconds
     }
   })()
 

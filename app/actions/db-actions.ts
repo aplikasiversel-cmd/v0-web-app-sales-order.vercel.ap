@@ -1124,12 +1124,16 @@ export async function createNotification(notification: {
   message: string
   type: string
   relatedOrderId?: string
+  referenceId?: string
+  createdById?: string
+  createdByName?: string
 }): Promise<{ id: string } | null> {
   try {
     const id = crypto.randomUUID()
+    const refId = notification.referenceId || notification.relatedOrderId || null
     await sql`
-      INSERT INTO notifications (id, user_id, title, message, type, is_read, related_order_id, created_at)
-      VALUES (${id}, ${notification.userId}, ${notification.title}, ${notification.message}, ${notification.type}, false, ${notification.relatedOrderId || null}, NOW())
+      INSERT INTO notifications (id, user_id, title, message, type, is_read, reference_id, created_by_id, created_by_name, created_at)
+      VALUES (${id}, ${notification.userId}, ${notification.title}, ${notification.message}, ${notification.type}, false, ${refId}, ${notification.createdById || null}, ${notification.createdByName || null}, NOW())
     `
     return { id }
   } catch (error) {
@@ -1147,12 +1151,15 @@ export async function getNotifications(): Promise<
     type: string
     isRead: boolean
     relatedOrderId?: string
+    referenceId?: string
+    createdById?: string
+    createdByName?: string
     createdAt: string
   }>
 > {
   try {
     const result = await sql`
-      SELECT id, user_id, title, message, type, is_read, related_order_id, created_at
+      SELECT id, user_id, title, message, type, is_read, reference_id, created_by_id, created_by_name, created_at
       FROM notifications
       ORDER BY created_at DESC
       LIMIT 100
@@ -1165,6 +1172,9 @@ export async function getNotifications(): Promise<
       type: row.type as string,
       isRead: row.is_read as boolean,
       relatedOrderId: row.related_order_id as string | undefined,
+      referenceId: row.reference_id as string | undefined,
+      createdById: row.created_by_id as string | undefined,
+      createdByName: row.created_by_name as string | undefined,
       createdAt: row.created_at as string,
     }))
   } catch (error) {
@@ -1181,13 +1191,16 @@ export async function getNotificationsByUserId(userId: string): Promise<
     message: string
     type: string
     isRead: boolean
-    relatedOrderId?: string
+    referenceId?: string
+    createdById?: string
+    createdByName?: string
     createdAt: string
   }>
 > {
   try {
+    if (!userId) return []
     const result = await sql`
-      SELECT id, user_id, title, message, type, is_read, related_order_id, created_at
+      SELECT id, user_id, title, message, type, is_read, reference_id, created_by_id, created_by_name, created_at
       FROM notifications
       WHERE user_id = ${userId}
       ORDER BY created_at DESC
@@ -1200,7 +1213,9 @@ export async function getNotificationsByUserId(userId: string): Promise<
       message: row.message as string,
       type: row.type as string,
       isRead: row.is_read as boolean,
-      relatedOrderId: row.related_order_id as string | undefined,
+      referenceId: row.reference_id as string | undefined,
+      createdById: row.created_by_id as string | undefined,
+      createdByName: row.created_by_name as string | undefined,
       createdAt: row.created_at as string,
     }))
   } catch (error) {
@@ -1352,63 +1367,45 @@ export async function getAllOrderNotes(): Promise<
 
 let isInitializing = false
 let lastInitTime = 0
-const INIT_COOLDOWN = 5 * 60 * 1000 // 5 minutes cooldown
+const INIT_COOLDOWN = 300000 // 5 minutes
 
 export async function initializeDefaultData(): Promise<void> {
-  // Prevent concurrent initialization
-  if (isInitializing) return
-
-  // Cooldown check
   const now = Date.now()
-  if (now - lastInitTime < INIT_COOLDOWN) return
+
+  // Prevent re-initialization within cooldown period
+  if (isInitializing || now - lastInitTime < INIT_COOLDOWN) {
+    return
+  }
 
   isInitializing = true
   lastInitTime = now
 
   try {
-    // Check if admin already exists - if so, skip initialization
-    const existingAdmin = await getUserByUsername("admin")
-    if (existingAdmin) {
+    // Check if admin exists
+    const admin = await getUserByUsername("admin")
+    if (admin) {
+      // Data already initialized
       isInitializing = false
       return
     }
 
-    // Create admin user
-    const adminId = crypto.randomUUID()
-    await sql`
-      INSERT INTO users (id, username, password, nama_lengkap, role, is_active, is_first_login, created_at)
-      VALUES (${adminId}::TEXT, 'admin', 'admin123', 'Administrator', 'admin', true, false, NOW())
-      ON CONFLICT (username) DO NOTHING
-    `
+    // Create default admin user
+    await createUser({
+      username: "admin",
+      password: "Muf@1234",
+      namaLengkap: "ADMINISTRATOR",
+      nomorHp: "081234567890",
+      role: "admin",
+      merk: [],
+      dealer: "",
+      jabatan: "Administrator",
+      isActive: true,
+      isFirstLogin: false,
+    })
 
-    // Create default merks if none exist
-    const existingMerks = await getMerks()
-    if (existingMerks.length === 0) {
-      const defaultMerks = [
-        { nama: "DAIHATSU", isDefault: true },
-        { nama: "HONDA", isDefault: false },
-        { nama: "SUZUKI", isDefault: false },
-        { nama: "TOYOTA", isDefault: false },
-        { nama: "MITSUBISHI", isDefault: false },
-        { nama: "NISSAN", isDefault: false },
-        { nama: "MAZDA", isDefault: false },
-        { nama: "ISUZU", isDefault: false },
-        { nama: "HINO", isDefault: false },
-        { nama: "HYUNDAI", isDefault: false },
-        { nama: "KIA", isDefault: false },
-        { nama: "WULING", isDefault: false },
-        { nama: "DFSK", isDefault: false },
-        { nama: "CHERY", isDefault: false },
-        { nama: "MG", isDefault: false },
-        { nama: "BYD", isDefault: false },
-      ]
-
-      for (const merk of defaultMerks) {
-        await createMerk(merk.nama, merk.isDefault)
-      }
-    }
+    console.log("[v0] Default admin created in Neon")
   } catch (error) {
-    console.error("[DB] initializeDefaultData error:", error)
+    console.error("[v0] Error initializing default data:", error)
   } finally {
     isInitializing = false
   }

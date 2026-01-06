@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -17,10 +19,13 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/hooks/use-toast"
-import { orderStore, notificationStore } from "@/lib/data-store"
-import type { Order, OrderStatus, User } from "@/lib/types"
-import { formatRupiah } from "@/lib/utils"
+import { useAuth } from "@/lib/auth-context"
+import { orderStore, notificationStore, userStore } from "@/lib/data-store"
+import type { Order, OrderStatus, User, OrderChecklist } from "@/lib/types"
+import { format } from "date-fns"
+import { id as idLocale } from "date-fns/locale"
 import {
   Search,
   Filter,
@@ -32,8 +37,13 @@ import {
   Circle,
   ChevronLeft,
   ChevronRight,
-  Download,
   MessageSquare,
+  Upload,
+  FileCheck,
+  Camera,
+  AlertCircle,
+  X,
+  CheckCircle2,
 } from "lucide-react"
 
 const ITEMS_PER_PAGE = 5
@@ -60,50 +70,113 @@ const STATUS_COLORS: Record<OrderStatus, string> = {
   Reject: "bg-red-100 text-red-800",
 }
 
+// Helper function to format currency
+const formatRupiah = (number: number): string => {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(number)
+}
+
 export default function TrackingOrderPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const [user, setUser] = useState<User | null>(null)
+  const { user, isLoading: authLoading } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all")
   const [currentPage, setCurrentPage] = useState(1)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  // Dialog states
   const [showDetailDialog, setShowDetailDialog] = useState(false)
   const [showSlikDialog, setShowSlikDialog] = useState(false)
   const [showPertimbanganDialog, setShowPertimbanganDialog] = useState(false)
   const [showNoteDialog, setShowNoteDialog] = useState(false)
+  const [showSurveyDialog, setShowSurveyDialog] = useState(false)
+  const [showMapInDialog, setShowMapInDialog] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [slikResult, setSlikResult] = useState<string>("")
   const [slikNote, setSlikNote] = useState("")
+  const [slikDecision, setSlikDecision] = useState<"Proses" | "Pertimbangkan" | "Reject">("Proses")
   const [pertimbanganAction, setPertimbanganAction] = useState<"Approve" | "Reject">("Approve")
   const [pertimbanganNote, setPertimbanganNote] = useState("")
   const [noteText, setNoteText] = useState("")
+  // const [surveyAction, setSurveyAction] = useState<"Survey" | "Janji Survey" | "Pemenuhan Berkas">("Survey") // Removed, handled by different states
+  const [surveyNote, setSurveyNote] = useState("")
+  const [surveyDate, setSurveyDate] = useState("")
+  const [surveyPhotos, setSurveyPhotos] = useState<string[]>([])
+  const [checklist, setChecklist] = useState<OrderChecklist>({
+    ktpPemohon: false,
+    ktpPasangan: false,
+    kartuKeluarga: false,
+    npwp: false,
+    bkr: false,
+    livin: false,
+    rekTabungan: false,
+    mufApp: false,
+  })
+  const [mapInAction, setMapInAction] = useState<"Map In" | "Reject">("Map In")
+  const [mapInNote, setMapInNote] = useState("")
   const [processingAction, setProcessingAction] = useState(false)
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("muf_current_user")
-    if (storedUser) {
-      setUser(JSON.parse(storedUser))
-    } else {
+    if (!authLoading && !user) {
       router.push("/login")
     }
-  }, [router])
+  }, [user, authLoading, router])
 
   const loadOrders = useCallback(async () => {
     if (!user) return
+
     try {
       setLoading(true)
+      const allOrders = await orderStore.getAll()
+      console.log("[v0] TrackingPage - allOrders count:", allOrders.length)
+      console.log("[v0] TrackingPage - user:", {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        namaLengkap: user.namaLengkap,
+      })
+
       let ordersData: Order[] = []
 
-      if (user.role === "admin") {
-        ordersData = await orderStore.getAll()
-      } else if (user.role === "cmh") {
-        ordersData = await orderStore.getAll()
+      if (user.role === "admin" || user.role === "cmh") {
+        // Admin dan CMH melihat semua order
+        ordersData = allOrders
+      } else if (user.role === "spv") {
+        // SPV hanya melihat order dari sales yang ditugaskan kepadanya
+        const allSales = await userStore.getByRole("sales")
+        console.log("[v0] TrackingPage - allSales count:", allSales.length)
+
+        const salesUnderSPV = allSales.filter(
+          (s: User) =>
+            s.spvId === user.id ||
+            s.spvId === user.username ||
+            s.spvName === user.namaLengkap ||
+            s.spvName?.toLowerCase() === user.namaLengkap?.toLowerCase(),
+        )
+        console.log(
+          "[v0] TrackingPage - salesUnderSPV:",
+          salesUnderSPV.map((s) => ({ id: s.id, nama: s.namaLengkap, spvId: s.spvId, spvName: s.spvName })),
+        )
+
+        const salesIds = salesUnderSPV.map((s: User) => s.id)
+        const salesUsernames = salesUnderSPV.map((s: User) => s.username)
+        const salesNames = salesUnderSPV.map((s: User) => s.namaLengkap?.toLowerCase())
+
+        ordersData = allOrders.filter(
+          (order: Order) =>
+            salesIds.includes(order.salesId) ||
+            salesUsernames.includes(order.salesId) ||
+            salesNames.includes(order.salesName?.toLowerCase()),
+        )
+        console.log("[v0] TrackingPage - spv filtered orders:", ordersData.length)
       } else if (user.role === "cmo") {
-        const allOrders = await orderStore.getAll()
+        // CMO melihat order yang ditugaskan kepadanya
         ordersData = allOrders.filter(
           (o) =>
             o.cmoId === user.id ||
@@ -111,21 +184,27 @@ export default function TrackingOrderPage() {
             o.cmoName === user.namaLengkap ||
             o.cmoName?.toLowerCase() === user.namaLengkap?.toLowerCase(),
         )
+        console.log("[v0] TrackingPage - cmo filtered orders:", ordersData.length)
       } else if (user.role === "sales") {
-        ordersData = await orderStore.getBySalesId(user.id)
-      } else if (user.role === "spv") {
-        ordersData = await orderStore.getAll()
+        // Sales hanya melihat order miliknya
+        ordersData = allOrders.filter(
+          (o) =>
+            o.salesId === user.id ||
+            o.salesId === user.username ||
+            o.salesName === user.namaLengkap ||
+            o.salesName?.toLowerCase() === user.namaLengkap?.toLowerCase(),
+        )
+        console.log("[v0] TrackingPage - sales filtered orders:", ordersData.length)
       }
 
-      // Orders already include notes from getOrders() in firebase-actions
       setOrders(ordersData)
     } catch (error) {
-      console.error("Error loading orders:", error)
-      toast({ title: "Error", description: "Gagal memuat data order", variant: "destructive" })
+      console.error("[v0] TrackingPage - Error loading orders:", error)
+      setOrders([])
     } finally {
       setLoading(false)
     }
-  }, [user, toast])
+  }, [user])
 
   useEffect(() => {
     if (user) {
@@ -144,7 +223,6 @@ export default function TrackingOrderPage() {
     })
   }, [orders, searchQuery, statusFilter])
 
-  // Pagination
   const totalPages = Math.ceil(filteredOrders.length / ITEMS_PER_PAGE)
   const paginatedOrders = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE
@@ -197,7 +275,6 @@ export default function TrackingOrderPage() {
 
       await orderStore.update(order.id, updates)
 
-      // Add note if provided
       if (note && user) {
         await orderStore.addNote(order.id, {
           id: crypto.randomUUID(),
@@ -211,7 +288,6 @@ export default function TrackingOrderPage() {
         })
       }
 
-      // Create notification
       if (order.salesId) {
         await notificationStore.add({
           userId: order.salesId,
@@ -238,21 +314,22 @@ export default function TrackingOrderPage() {
     try {
       setProcessingAction(true)
 
-      let newStatus: OrderStatus = "Proses"
-      if (slikResult === "Tolak") {
-        newStatus = "Reject"
-      } else if (slikResult === "Ada Catatan") {
-        newStatus = "Pertimbangkan"
-      }
+      // CMO memilih keputusan manual: Proses, Pertimbangkan, atau Reject
+      const newStatus: OrderStatus = slikDecision
 
       await orderStore.update(selectedOrder.id, {
         status: newStatus,
         hasilSlik: slikResult,
       })
 
-      // Add note with SLIK result
       if (user) {
-        const noteMessage = slikNote ? `Hasil SLIK: ${slikResult}. Catatan: ${slikNote}` : `Hasil SLIK: ${slikResult}`
+        const decisionText =
+          slikDecision === "Proses"
+            ? "Lanjut ke Survey"
+            : slikDecision === "Pertimbangkan"
+              ? "Dikirim ke CMH untuk pertimbangan"
+              : "Ditolak (Reject)"
+        const noteMessage = `Hasil SLIK: ${slikResult}. Keputusan: ${decisionText}${slikNote ? `. Catatan: ${slikNote}` : ""}`
 
         await orderStore.addNote(selectedOrder.id, {
           id: crypto.randomUUID(),
@@ -266,10 +343,11 @@ export default function TrackingOrderPage() {
         })
       }
 
-      toast({ title: "Berhasil", description: "Hasil SLIK berhasil disimpan" })
+      toast({ title: "Berhasil", description: `Hasil SLIK berhasil disimpan. Status: ${newStatus}` })
       setShowSlikDialog(false)
       setSlikResult("")
       setSlikNote("")
+      setSlikDecision("Proses")
       await loadOrders()
     } catch (error) {
       console.error("Error submitting SLIK:", error)
@@ -285,25 +363,32 @@ export default function TrackingOrderPage() {
     try {
       setProcessingAction(true)
 
-      const newStatus: OrderStatus = pertimbanganAction
+      const newStatus: OrderStatus = pertimbanganAction === "Approve" ? "Proses" : "Reject"
 
       await orderStore.update(selectedOrder.id, { status: newStatus })
 
-      // Add note
-      if (user && pertimbanganNote) {
+      if (user) {
+        const noteMessage =
+          pertimbanganAction === "Approve"
+            ? `Pertimbangan Disetujui: ${pertimbanganNote || "Lanjut ke proses survey"}`
+            : `Pertimbangan Ditolak: ${pertimbanganNote || "Order ditolak"}`
+
         await orderStore.addNote(selectedOrder.id, {
           id: crypto.randomUUID(),
           orderId: selectedOrder.id,
           userId: user.id,
           userName: user.namaLengkap,
           role: user.role,
-          note: `Keputusan ${pertimbanganAction}: ${pertimbanganNote}`,
+          note: noteMessage,
           status: newStatus,
           createdAt: new Date().toISOString(),
         })
       }
 
-      toast({ title: "Berhasil", description: `Order telah di-${pertimbanganAction}` })
+      toast({
+        title: "Berhasil",
+        description: pertimbanganAction === "Approve" ? "Order dilanjutkan ke proses survey" : "Order ditolak",
+      })
       setShowPertimbanganDialog(false)
       setPertimbanganNote("")
       await loadOrders()
@@ -342,6 +427,181 @@ export default function TrackingOrderPage() {
     } finally {
       setProcessingAction(false)
     }
+  }
+
+  useEffect(() => {
+    // Function to load existing survey data
+    const loadSurveyData = () => {
+      if (selectedOrder && showSurveyDialog) {
+        setSurveyDate(selectedOrder.tanggalSurvey || "")
+        setSurveyPhotos(selectedOrder.fotoSurvey || [])
+        setSurveyNote(selectedOrder.surveyNote || "") // Assuming surveyNote exists in Order type
+
+        // Load checklist if exists, otherwise use default
+        if (selectedOrder.checklistBerkas) {
+          // Assuming checklistBerkas exists in Order type
+          setChecklist(selectedOrder.checklistBerkas)
+        } else {
+          setChecklist({
+            ktpPemohon: false,
+            ktpPasangan: false,
+            kartuKeluarga: false,
+            npwp: false,
+            bkr: false,
+            livin: false,
+            rekTabungan: false,
+            mufApp: false,
+          })
+        }
+      }
+    }
+    loadSurveyData()
+  }, [selectedOrder, showSurveyDialog])
+
+  const isSurveyReadyForDecision = useMemo(() => {
+    const hasPhotos = surveyPhotos.length > 0
+    const allChecklistComplete = Object.values(checklist).every(Boolean)
+    return hasPhotos && allChecklistComplete
+  }, [surveyPhotos, checklist])
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files) return
+
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setSurveyPhotos((prev) => [...prev, event.target!.result as string])
+        }
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const removePhoto = (index: number) => {
+    setSurveyPhotos((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const handleChecklistChange = (key: keyof OrderChecklist, checked: boolean) => {
+    setChecklist((prev) => ({ ...prev, [key]: checked }))
+  }
+
+  const handleSurveySubmit = async () => {
+    if (!selectedOrder || !user) return
+
+    try {
+      setProcessingAction(true)
+
+      // Simpan sebagai draft - status tetap "Survey" atau "Proses" jika pertama kali
+      const newStatus: OrderStatus = selectedOrder.status === "Proses" ? "Survey" : selectedOrder.status
+
+      await orderStore.update(selectedOrder.id, {
+        status: newStatus,
+        tanggalSurvey: surveyDate || undefined,
+        fotoSurvey: surveyPhotos.length > 0 ? surveyPhotos : undefined,
+        checklistBerkas: checklist, // Assuming checklistBerkas in Order type
+        surveyNote: surveyNote || undefined, // Assuming surveyNote in Order type
+      })
+
+      let noteMessage = `Draft survey disimpan`
+      if (surveyDate) {
+        noteMessage += ` - Tanggal Survey: ${format(new Date(surveyDate), "d MMMM yyyy", { locale: idLocale })}`
+      }
+      noteMessage += ` - Checklist: ${Object.values(checklist).filter(Boolean).length}/8`
+      noteMessage += ` - Foto: ${surveyPhotos.length}`
+      if (surveyNote) {
+        noteMessage += ` - Catatan: ${surveyNote}`
+      }
+
+      await orderStore.addNote(selectedOrder.id, {
+        id: crypto.randomUUID(),
+        orderId: selectedOrder.id,
+        userId: user.id,
+        userName: user.namaLengkap,
+        role: user.role,
+        note: noteMessage,
+        status: newStatus,
+        createdAt: new Date().toISOString(),
+      })
+
+      toast({ title: "Berhasil", description: "Draft survey berhasil disimpan" })
+      setShowSurveyDialog(false)
+      resetSurveyForm()
+      await loadOrders()
+    } catch (error) {
+      console.error("Error submitting survey:", error)
+      toast({ title: "Error", description: "Gagal menyimpan draft", variant: "destructive" })
+    } finally {
+      setProcessingAction(false)
+    }
+  }
+
+  const handleMapInSubmit = async () => {
+    if (!selectedOrder || !user) return
+
+    try {
+      setProcessingAction(true)
+
+      // Map In = kirim ke CMH untuk review (status "Map In")
+      // Reject = final rejection dari CMO (status "Reject")
+      const newStatus: OrderStatus = mapInAction
+
+      await orderStore.update(selectedOrder.id, { status: newStatus })
+
+      const noteMessage = mapInNote
+        ? `${mapInAction}: ${mapInNote}`
+        : mapInAction === "Map In"
+          ? "Order diajukan ke CMH untuk keputusan Approve/Reject"
+          : "Order ditolak oleh CMO"
+
+      await orderStore.addNote(selectedOrder.id, {
+        id: crypto.randomUUID(),
+        orderId: selectedOrder.id,
+        userId: user.id,
+        userName: user.namaLengkap,
+        role: user.role,
+        note: noteMessage,
+        status: newStatus,
+        createdAt: new Date().toISOString(),
+      })
+
+      toast({
+        title: "Berhasil",
+        description:
+          mapInAction === "Map In" ? "Order berhasil diajukan ke CMH untuk keputusan" : "Order berhasil ditolak",
+      })
+      setShowMapInDialog(false)
+      // Close survey dialog after map-in decision if it was open
+      if (showSurveyDialog) {
+        setShowSurveyDialog(false)
+      }
+      setMapInNote("")
+      resetSurveyForm()
+      await loadOrders()
+    } catch (error) {
+      console.error("Error submitting map in:", error)
+      toast({ title: "Error", description: "Gagal memproses", variant: "destructive" })
+    } finally {
+      setProcessingAction(false)
+    }
+  }
+
+  const resetSurveyForm = () => {
+    setSurveyNote("")
+    // setSurveyAction("Survey") // Removed, handled by different states
+    setSurveyDate("")
+    setSurveyPhotos([])
+    setChecklist({
+      ktpPemohon: false,
+      ktpPasangan: false,
+      kartuKeluarga: false,
+      npwp: false,
+      bkr: false,
+      livin: false,
+      rekTabungan: false,
+      mufApp: false,
+    })
   }
 
   const getActionButton = (order: Order) => {
@@ -385,6 +645,25 @@ export default function TrackingOrderPage() {
           )
         }
         break
+      case "Proses":
+        if (isCmo) {
+          return (
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setSelectedOrder(order)
+                  setShowSurveyDialog(true)
+                }}
+                disabled={processingAction}
+              >
+                Survey
+              </Button>
+            </div>
+          )
+        }
+        break
       case "Pertimbangkan":
         if (isCmh) {
           return (
@@ -397,6 +676,51 @@ export default function TrackingOrderPage() {
               disabled={processingAction}
             >
               Keputusan
+            </Button>
+          )
+        }
+        break
+      case "Survey":
+        // CMO bisa buka dialog survey lagi untuk melengkapi berkas
+        if (isCmo) {
+          return (
+            <Button
+              size="sm"
+              onClick={() => {
+                // Load existing survey data from order
+                setSelectedOrder(order)
+                setSurveyDate(order.tanggalSurvey || "")
+                setSurveyPhotos(order.fotoSurvey || [])
+                setSurveyNote(order.surveyNote || "")
+                // Load checklist if exists
+                if (order.checklistBerkas) {
+                  setChecklist(order.checklistBerkas)
+                } else {
+                  setChecklist({
+                    ktpPemohon: false,
+                    ktpPasangan: false,
+                    kartuKeluarga: false,
+                    npwp: false,
+                    bkr: false,
+                    livin: false,
+                    rekTabungan: false,
+                    mufApp: false,
+                  })
+                }
+                setShowSurveyDialog(true)
+              }}
+              disabled={processingAction}
+            >
+              Lanjutkan Survey
+            </Button>
+          )
+        }
+        break
+      case "Map In":
+        if (isCmo) {
+          return (
+            <Button size="sm" onClick={() => handleStatusChange(order, "Approve")} disabled={processingAction}>
+              Submit Approve
             </Button>
           )
         }
@@ -418,7 +742,7 @@ export default function TrackingOrderPage() {
     })
   }
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -456,7 +780,6 @@ export default function TrackingOrderPage() {
         ))}
       </div>
 
-      {/* Search and Filter */}
       <Card>
         <CardContent className="p-4">
           <div className="flex flex-col md:flex-row gap-4">
@@ -489,7 +812,6 @@ export default function TrackingOrderPage() {
         </CardContent>
       </Card>
 
-      {/* Orders List */}
       <Card>
         <CardHeader>
           <CardTitle>Daftar Order</CardTitle>
@@ -506,7 +828,6 @@ export default function TrackingOrderPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Desktop Table */}
               <div className="hidden md:block overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -550,7 +871,6 @@ export default function TrackingOrderPage() {
                 </table>
               </div>
 
-              {/* Mobile Cards */}
               <div className="md:hidden space-y-3">
                 {paginatedOrders.map((order) => (
                   <Card key={order.id}>
@@ -583,7 +903,6 @@ export default function TrackingOrderPage() {
                 ))}
               </div>
 
-              {/* Pagination */}
               {totalPages > 1 && (
                 <div className="flex justify-center items-center gap-2 pt-4">
                   <Button
@@ -614,7 +933,6 @@ export default function TrackingOrderPage() {
         </CardContent>
       </Card>
 
-      {/* Detail Order Dialog */}
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -660,7 +978,6 @@ export default function TrackingOrderPage() {
                 </div>
               </div>
 
-              {/* Status Timeline */}
               <div className="pt-4 border-t">
                 <Label className="text-muted-foreground mb-2 block">Progress Status</Label>
                 <div className="flex items-center justify-between overflow-x-auto pb-2">
@@ -696,71 +1013,10 @@ export default function TrackingOrderPage() {
                 </div>
               </div>
 
-              {/* Documents Section */}
-              <div className="pt-4 border-t">
-                <Label className="text-muted-foreground mb-2 block">Dokumen Lampiran</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {selectedOrder.fotoKtpNasabah && (
-                    <a
-                      href={selectedOrder.fotoKtpNasabah}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 p-2 border rounded hover:bg-muted"
-                    >
-                      <Download className="h-4 w-4" />
-                      <span className="text-sm">KTP Nasabah</span>
-                    </a>
-                  )}
-                  {selectedOrder.fotoKtpPasangan && (
-                    <a
-                      href={selectedOrder.fotoKtpPasangan}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 p-2 border rounded hover:bg-muted"
-                    >
-                      <Download className="h-4 w-4" />
-                      <span className="text-sm">KTP Pasangan</span>
-                    </a>
-                  )}
-                  {selectedOrder.fotoKk && (
-                    <a
-                      href={selectedOrder.fotoKk}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 p-2 border rounded hover:bg-muted"
-                    >
-                      <Download className="h-4 w-4" />
-                      <span className="text-sm">Kartu Keluarga</span>
-                    </a>
-                  )}
-                  {selectedOrder.fotoSurvey &&
-                    selectedOrder.fotoSurvey.length > 0 &&
-                    selectedOrder.fotoSurvey.map((foto, idx) => (
-                      <a
-                        key={idx}
-                        href={foto}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 p-2 border rounded hover:bg-muted"
-                      >
-                        <Download className="h-4 w-4" />
-                        <span className="text-sm">Foto Survey {idx + 1}</span>
-                      </a>
-                    ))}
-                </div>
-                {!selectedOrder.fotoKtpNasabah &&
-                  !selectedOrder.fotoKtpPasangan &&
-                  !selectedOrder.fotoKk &&
-                  (!selectedOrder.fotoSurvey || selectedOrder.fotoSurvey.length === 0) && (
-                    <p className="text-sm text-muted-foreground">Tidak ada dokumen lampiran</p>
-                  )}
-              </div>
-
-              {/* Notes Section */}
               <div className="pt-4 border-t">
                 <div className="flex items-center justify-between mb-2">
                   <Label className="text-muted-foreground">Catatan</Label>
-                  {user && (user.role === "cmo" || user.role === "cmh") && (
+                  {user && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -780,7 +1036,7 @@ export default function TrackingOrderPage() {
                         <div className="flex items-center gap-2 mb-1">
                           <span className="font-medium">{note.userName}</span>
                           <Badge variant="outline" className="text-xs">
-                            {note.role}
+                            {note.role?.toUpperCase() || "USER"}
                           </Badge>
                           <span className="text-xs text-muted-foreground">
                             {new Date(note.createdAt).toLocaleString("id-ID")}
@@ -804,12 +1060,11 @@ export default function TrackingOrderPage() {
         </DialogContent>
       </Dialog>
 
-      {/* SLIK Dialog */}
       <Dialog open={showSlikDialog} onOpenChange={setShowSlikDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Input Hasil SLIK</DialogTitle>
-            <DialogDescription>Masukkan hasil pengecekan SLIK</DialogDescription>
+            <DialogDescription>Masukkan hasil pengecekan SLIK dan pilih keputusan</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -825,6 +1080,57 @@ export default function TrackingOrderPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Pilihan keputusan CMO setelah input hasil SLIK */}
+            {slikResult && (
+              <div className="space-y-2">
+                <Label>Keputusan</Label>
+                <Select
+                  value={slikDecision}
+                  onValueChange={(v) => setSlikDecision(v as "Proses" | "Pertimbangkan" | "Reject")}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Proses">
+                      <div className="flex flex-col items-start">
+                        <span className="font-medium">Proses</span>
+                        <span className="text-xs text-muted-foreground">Lanjut ke Survey oleh CMO</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="Pertimbangkan">
+                      <div className="flex flex-col items-start">
+                        <span className="font-medium">Pertimbangkan</span>
+                        <span className="text-xs text-muted-foreground">Kirim ke CMH untuk review</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="Reject">
+                      <div className="flex flex-col items-start">
+                        <span className="font-medium">Reject</span>
+                        <span className="text-xs text-muted-foreground">Keputusan final - ditolak</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Info box berdasarkan keputusan */}
+                <div
+                  className={`p-3 rounded-lg text-sm ${
+                    slikDecision === "Proses"
+                      ? "bg-green-50 text-green-700 border border-green-200"
+                      : slikDecision === "Pertimbangkan"
+                        ? "bg-yellow-50 text-yellow-700 border border-yellow-200"
+                        : "bg-red-50 text-red-700 border border-red-200"
+                  }`}
+                >
+                  {slikDecision === "Proses" && "Order akan lanjut ke tahap Survey. CMO akan melakukan survey nasabah."}
+                  {slikDecision === "Pertimbangkan" && "Order akan dikirim ke CMH untuk dipertimbangkan lebih lanjut."}
+                  {slikDecision === "Reject" && "Order akan ditolak secara final. Keputusan ini tidak dapat diubah."}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Catatan (Opsional)</Label>
               <Textarea
@@ -835,17 +1141,28 @@ export default function TrackingOrderPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSlikDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSlikDialog(false)
+                setSlikResult("")
+                setSlikNote("")
+                setSlikDecision("Proses")
+              }}
+            >
               Batal
             </Button>
-            <Button onClick={handleSlikSubmit} disabled={!slikResult || processingAction}>
-              {processingAction ? "Menyimpan..." : "Simpan"}
+            <Button
+              onClick={handleSlikSubmit}
+              disabled={!slikResult || processingAction}
+              variant={slikDecision === "Reject" ? "destructive" : "default"}
+            >
+              {processingAction ? "Menyimpan..." : slikDecision === "Reject" ? "Reject Order" : "Simpan & Lanjutkan"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Pertimbangan Dialog for CMH */}
       <Dialog open={showPertimbanganDialog} onOpenChange={setShowPertimbanganDialog}>
         <DialogContent>
           <DialogHeader>
@@ -892,7 +1209,6 @@ export default function TrackingOrderPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Note Dialog */}
       <Dialog open={showNoteDialog} onOpenChange={setShowNoteDialog}>
         <DialogContent>
           <DialogHeader>
@@ -911,6 +1227,251 @@ export default function TrackingOrderPage() {
             </Button>
             <Button onClick={handleAddNote} disabled={!noteText || processingAction}>
               {processingAction ? "Menyimpan..." : "Simpan"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showSurveyDialog}
+        onOpenChange={(open) => {
+          setShowSurveyDialog(open)
+          if (!open) resetSurveyForm()
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Proses Survey</DialogTitle>
+            <DialogDescription>Lengkapi data survey untuk order {selectedOrder?.namaNasabah}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Jenis Proses */}
+            {/* Removed the select for "Jenis Proses" as it's not directly used in logic and potentially confusing */}
+            {/* If needed, it can be re-added with specific logic */}
+
+            {/* Tanggal Survey */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                Tanggal Survey
+              </Label>
+              <Input
+                type="date"
+                value={surveyDate}
+                onChange={(e) => setSurveyDate(e.target.value)}
+                min={new Date().toISOString().split("T")[0]}
+              />
+            </div>
+
+            {/* Checklist Pemenuhan Berkas */}
+            <div className="space-y-3">
+              <Label className="flex items-center gap-2">
+                <FileCheck className="h-4 w-4" />
+                Checklist Pemenuhan Berkas
+              </Label>
+              <div className="grid grid-cols-2 gap-3 p-4 border rounded-lg bg-muted/30">
+                {[
+                  { key: "ktpPemohon", label: "KTP Pemohon" },
+                  { key: "ktpPasangan", label: "KTP Pasangan" },
+                  { key: "kartuKeluarga", label: "Kartu Keluarga" },
+                  { key: "npwp", label: "NPWP" },
+                  { key: "bkr", label: "BKR" },
+                  { key: "livin", label: "Livin" },
+                  { key: "rekTabungan", label: "Rekening Tabungan" },
+                  { key: "mufApp", label: "MUF App" },
+                ].map(({ key, label }) => (
+                  <div key={key} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={key}
+                      checked={checklist[key as keyof OrderChecklist]}
+                      onCheckedChange={(checked) =>
+                        handleChecklistChange(key as keyof OrderChecklist, checked as boolean)
+                      }
+                    />
+                    <label
+                      htmlFor={key}
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      {label}
+                    </label>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Checklist terisi: {Object.values(checklist).filter(Boolean).length} / 8
+              </p>
+            </div>
+
+            {/* Upload Foto Survey */}
+            <div className="space-y-3">
+              <Label className="flex items-center gap-2">
+                <Camera className="h-4 w-4" />
+                Foto Survey
+              </Label>
+              <div className="border-2 border-dashed rounded-lg p-4 text-center">
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                  id="survey-photos"
+                />
+                <label htmlFor="survey-photos" className="cursor-pointer">
+                  <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">Klik untuk upload foto survey</p>
+                  <p className="text-xs text-muted-foreground mt-1">JPG, PNG, atau WEBP</p>
+                </label>
+              </div>
+
+              {surveyPhotos.length > 0 && (
+                <div className="grid grid-cols-4 gap-2 mt-3">
+                  {surveyPhotos.map((photo, index) => (
+                    <div key={index} className="relative group">
+                      <img
+                        src={photo || "/placeholder.svg"}
+                        alt={`Survey photo ${index + 1}`}
+                        className="w-full h-20 object-cover rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(index)}
+                        className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">Foto terupload: {surveyPhotos.length}</p>
+            </div>
+
+            {/* Catatan */}
+            <div className="space-y-2">
+              <Label>Catatan (Opsional)</Label>
+              <Textarea
+                placeholder="Tambahkan catatan proses..."
+                value={surveyNote}
+                onChange={(e) => setSurveyNote(e.target.value)}
+              />
+            </div>
+
+            {/* Status Kelengkapan */}
+            {isSurveyReadyForDecision ? (
+              <div className="p-4 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg">
+                <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <span className="font-medium">Semua persyaratan terpenuhi!</span>
+                </div>
+                <p className="text-sm text-green-600 dark:text-green-400 mt-1">
+                  Anda dapat melanjutkan ke keputusan Map In atau Reject
+                </p>
+              </div>
+            ) : (
+              <div className="p-4 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                  <AlertCircle className="h-5 w-5" />
+                  <span className="font-medium">Lengkapi persyaratan untuk lanjut ke keputusan</span>
+                </div>
+                <ul className="text-sm text-amber-600 dark:text-amber-400 mt-2 space-y-1">
+                  {surveyPhotos.length === 0 && <li>• Foto survey belum diupload</li>}
+                  {!Object.values(checklist).every(Boolean) && (
+                    <li>• Checklist berkas belum lengkap ({Object.values(checklist).filter(Boolean).length}/8)</li>
+                  )}
+                </ul>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Anda dapat menyimpan draft terlebih dahulu dan melanjutkan nanti
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setShowSurveyDialog(false)}>
+              Batal
+            </Button>
+            <Button variant="secondary" onClick={handleSurveySubmit} disabled={processingAction}>
+              {processingAction ? "Menyimpan..." : "Simpan Draft"}
+            </Button>
+            {isSurveyReadyForDecision && (
+              <Button onClick={() => setShowMapInDialog(true)} className="bg-primary">
+                Lanjut ke Keputusan
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showMapInDialog} onOpenChange={setShowMapInDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Keputusan Survey</DialogTitle>
+            <DialogDescription>Berikan keputusan untuk order {selectedOrder?.namaNasabah}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Keputusan</Label>
+              <Select value={mapInAction} onValueChange={(v) => setMapInAction(v as "Map In" | "Reject")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Map In">
+                    <div className="flex flex-col">
+                      <span>Map In</span>
+                      <span className="text-xs text-muted-foreground">
+                        Ajukan ke CMH untuk keputusan Approve/Reject
+                      </span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="Reject">
+                    <div className="flex flex-col">
+                      <span>Reject</span>
+                      <span className="text-xs text-muted-foreground">Tolak order (keputusan final)</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Info box based on selection */}
+            <div
+              className={`p-3 rounded-lg ${mapInAction === "Map In" ? "bg-blue-50 dark:bg-blue-950 border border-blue-200" : "bg-red-50 dark:bg-red-950 border border-red-200"}`}
+            >
+              <p
+                className={`text-sm ${mapInAction === "Map In" ? "text-blue-700 dark:text-blue-300" : "text-red-700 dark:text-red-300"}`}
+              >
+                {mapInAction === "Map In"
+                  ? "Order akan dikirim ke CMH untuk keputusan final (Approve atau Reject)"
+                  : "Order akan ditolak secara permanen"}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Catatan {mapInAction === "Reject" && <span className="text-red-500">*</span>}</Label>
+              <Textarea
+                placeholder={
+                  mapInAction === "Map In" ? "Catatan untuk CMH (opsional)..." : "Berikan alasan penolakan..."
+                }
+                value={mapInNote}
+                onChange={(e) => setMapInNote(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowMapInDialog(false)}>
+              Batal
+            </Button>
+            <Button
+              onClick={handleMapInSubmit}
+              disabled={processingAction || (mapInAction === "Reject" && !mapInNote.trim())}
+              variant={mapInAction === "Reject" ? "destructive" : "default"}
+            >
+              {processingAction ? "Memproses..." : mapInAction === "Map In" ? "Ajukan ke CMH" : "Reject Order"}
             </Button>
           </DialogFooter>
         </DialogContent>

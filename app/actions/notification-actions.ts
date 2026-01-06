@@ -1,12 +1,13 @@
 "use server"
 
 import {
-  getNotifications as getFirebaseNotifications,
-  createNotification as createFirebaseNotification,
-  markNotificationAsRead as markFirebaseNotificationAsRead,
-  markAllNotificationsAsRead as markFirebaseAllNotificationsAsRead,
-  getUsers,
-} from "./firebase-actions"
+  getNotificationsByUserId as getNeonNotificationsByUserId,
+  createNotification as createNeonNotification,
+  markNotificationAsRead as markNeonNotificationAsRead,
+  markAllNotificationsAsRead as markNeonAllNotificationsAsRead,
+  getUsers as getNeonUsers,
+  getUsersByRole as getNeonUsersByRole,
+} from "./db-actions"
 import type { UserRole } from "@/lib/types"
 
 export interface Notification {
@@ -22,44 +23,49 @@ export interface Notification {
   createdByName?: string
 }
 
-let notificationsCache: { data: Notification[]; timestamp: number } | null = null
-const CACHE_TTL = 300000 // 5 minutes
-
-async function getCachedNotifications(): Promise<Notification[]> {
-  const now = Date.now()
-  if (notificationsCache && now - notificationsCache.timestamp < CACHE_TTL) {
-    return notificationsCache.data
-  }
-
-  try {
-    const allNotifications = await getFirebaseNotifications()
-    notificationsCache = { data: allNotifications, timestamp: now }
-    return allNotifications
-  } catch (error) {
-    console.error("[Notification] Error getting cached notifications:", error)
-    // Return stale cache if available
-    return notificationsCache?.data || []
-  }
-}
+let notificationsCache: { data: Notification[]; timestamp: number; userId?: string } | null = null
+const CACHE_TTL = 60000 // 1 minute (can be shorter since Neon has no rate limits)
 
 // Get notifications for a user
 export async function getNotifications(userId: string): Promise<Notification[]> {
   try {
-    const allNotifications = await getCachedNotifications()
-    return allNotifications
-      .filter((n) => n.userId === userId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    // Check cache first
+    const now = Date.now()
+    if (notificationsCache && notificationsCache.userId === userId && now - notificationsCache.timestamp < CACHE_TTL) {
+      return notificationsCache.data
+    }
+
+    const notifications = await getNeonNotificationsByUserId(userId)
+    const mapped = notifications.map((n: any) => ({
+      id: n.id,
+      userId: n.userId || n.user_id,
+      title: n.title,
+      message: n.message,
+      type: n.type,
+      referenceId: n.referenceId || n.reference_id,
+      isRead: n.isRead ?? n.is_read ?? false,
+      createdAt: n.createdAt || n.created_at,
+      createdById: n.createdById || n.created_by_id,
+      createdByName: n.createdByName || n.created_by_name,
+    }))
+
+    // Sort by date and limit
+    const sorted = mapped
+      .sort((a: Notification, b: Notification) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 50)
+
+    notificationsCache = { data: sorted, timestamp: now, userId }
+    return sorted
   } catch (error) {
     console.error("[Notification] Error getting notifications:", error)
-    return []
+    return notificationsCache?.data || []
   }
 }
 
 export async function getUnreadNotificationCount(userId: string): Promise<number> {
   try {
-    const allNotifications = await getCachedNotifications()
-    return allNotifications.filter((n) => n.userId === userId && !n.isRead).length
+    const notifications = await getNotifications(userId)
+    return notifications.filter((n) => !n.isRead).length
   } catch (error) {
     console.error("[Notification] Error getting unread count:", error)
     return 0
@@ -68,7 +74,7 @@ export async function getUnreadNotificationCount(userId: string): Promise<number
 
 export async function markNotificationAsRead(notificationId: string): Promise<void> {
   try {
-    await markFirebaseNotificationAsRead(notificationId)
+    await markNeonNotificationAsRead(notificationId)
     notificationsCache = null // Invalidate cache
   } catch (error) {
     console.error("[Notification] Error marking as read:", error)
@@ -77,7 +83,7 @@ export async function markNotificationAsRead(notificationId: string): Promise<vo
 
 export async function markAllNotificationsAsRead(userId: string): Promise<void> {
   try {
-    await markFirebaseAllNotificationsAsRead(userId)
+    await markNeonAllNotificationsAsRead(userId)
     notificationsCache = null // Invalidate cache
   } catch (error) {
     console.error("[Notification] Error marking all as read:", error)
@@ -88,9 +94,14 @@ export async function createNotification(
   notification: Omit<Notification, "id" | "createdAt" | "isRead">,
 ): Promise<void> {
   try {
-    await createFirebaseNotification({
-      ...notification,
-      isRead: false,
+    await createNeonNotification({
+      userId: notification.userId,
+      title: notification.title,
+      message: notification.message,
+      type: notification.type,
+      referenceId: notification.referenceId,
+      createdById: notification.createdById,
+      createdByName: notification.createdByName,
     })
     notificationsCache = null // Invalidate cache
   } catch (error) {
@@ -99,7 +110,7 @@ export async function createNotification(
 }
 
 let usersCache: { data: any[]; timestamp: number } | null = null
-const USERS_CACHE_TTL = 300000 // 5 minutes
+const USERS_CACHE_TTL = 60000 // 1 minute
 
 async function getCachedUsers(): Promise<any[]> {
   const now = Date.now()
@@ -108,7 +119,7 @@ async function getCachedUsers(): Promise<any[]> {
   }
 
   try {
-    const users = await getUsers()
+    const users = await getNeonUsers()
     usersCache = { data: users, timestamp: now }
     return users
   } catch (error) {
@@ -119,8 +130,13 @@ async function getCachedUsers(): Promise<any[]> {
 // Get users by role for sending notifications
 export async function getUsersByRole(role: UserRole): Promise<{ id: string; namaLengkap: string }[]> {
   try {
-    const users = await getCachedUsers()
-    return users.filter((u) => u.role === role && u.isActive).map((u) => ({ id: u.id, namaLengkap: u.namaLengkap }))
+    const users = await getNeonUsersByRole(role)
+    return users
+      .filter((u: any) => u.isActive ?? u.is_active)
+      .map((u: any) => ({
+        id: u.id,
+        namaLengkap: u.namaLengkap || u.nama_lengkap,
+      }))
   } catch (error) {
     console.error("[Notification] Error getting users by role:", error)
     return []
