@@ -15,12 +15,10 @@ import { InputRupiah } from "@/components/ui/input-rupiah"
 import { InputPhone } from "@/components/ui/input-phone"
 import { useAuth } from "@/lib/auth-context"
 import { userStore, programStore, orderStore } from "@/lib/data-store"
-import { JENIS_PEMBIAYAAN } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { formatRupiah } from "@/lib/utils"
 import { Save, Upload, X, Loader2 } from "lucide-react"
 import { notifyNewOrder } from "@/app/actions/notification-actions"
-import Image from "next/image"
 
 interface OrderFormData {
   namaNasabah: string
@@ -68,12 +66,27 @@ export default function NewOrderPage() {
     fotoKk: "",
   })
 
-  const userMerk = user?.merk || ""
   const userDealer = user?.dealer || ""
 
+  const userMerk = useMemo(() => {
+    const merk = user?.merk
+    if (Array.isArray(merk)) {
+      return merk[0] || ""
+    }
+    return merk || ""
+  }, [user?.merk])
+
   const filteredPrograms = useMemo(() => {
-    if (!userMerk || !formData.jenisPembiayaan || !Array.isArray(programs)) return []
-    return programs.filter((p) => p.merk === userMerk && p.jenisPembiayaan === formData.jenisPembiayaan && p.isActive)
+    if (!userMerk || !formData.jenisPembiayaan || !Array.isArray(programs)) {
+      return []
+    }
+    const filtered = programs.filter((p) => {
+      const merkMatch = p.merk?.toLowerCase() === userMerk.toLowerCase()
+      const jenisMatch = p.jenisPembiayaan === formData.jenisPembiayaan
+      const isActive = p.isActive
+      return merkMatch && jenisMatch && isActive
+    })
+    return filtered
   }, [userMerk, formData.jenisPembiayaan, programs])
 
   const uniqueCmoList = useMemo(() => {
@@ -160,12 +173,14 @@ export default function NewOrderPage() {
     try {
       const compressedDataUrl = await compressImage(file, 800, 0.7)
       setFormData((prev) => ({ ...prev, [field]: compressedDataUrl }))
+      console.log("[v0] Photo uploaded successfully:", field)
     } catch (error) {
-      console.error("Error processing image:", error)
+      console.error("[v0] Error processing image:", error)
       const reader = new FileReader()
       reader.onload = (e) => {
         const result = e.target?.result as string
         setFormData((prev) => ({ ...prev, [field]: result }))
+        console.log("[v0] Photo uploaded via fallback:", field)
       }
       reader.readAsDataURL(file)
     }
@@ -175,7 +190,8 @@ export default function NewOrderPage() {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = (e) => {
-        const img = new Image()
+        // Use globalThis.Image or window.Image to avoid conflict with next/image
+        const img = new globalThis.Image()
         img.crossOrigin = "anonymous"
         img.onload = () => {
           const canvas = document.createElement("canvas")
@@ -199,10 +215,10 @@ export default function NewOrderPage() {
           ctx.drawImage(img, 0, 0, width, height)
           resolve(canvas.toDataURL("image/jpeg", quality))
         }
-        img.onerror = reject
+        img.onerror = () => reject(new Error("Failed to load image"))
         img.src = e.target?.result as string
       }
-      reader.onerror = reject
+      reader.onerror = () => reject(new Error("Failed to read file"))
       reader.readAsDataURL(file)
     })
   }
@@ -418,12 +434,16 @@ export default function NewOrderPage() {
                         </Button>
                       </div>
                     ) : (
-                      <label className="flex h-20 w-32 cursor-pointer items-center justify-center rounded border-2 border-dashed border-muted-foreground/25 hover:border-muted-foreground/50">
+                      <label className="flex h-20 w-32 cursor-pointer items-center justify-center rounded border-2 border-dashed border-muted-foreground/25 hover:border-muted-foreground/50 transition-colors">
                         <input
                           type="file"
                           accept="image/*"
                           className="hidden"
-                          onChange={(e) => handleFileChange("fotoKtpNasabah", e.target.files?.[0] || null)}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) handleFileChange("fotoKtpNasabah", file)
+                            e.target.value = "" // Reset input for re-upload
+                          }}
                         />
                         <Upload className="h-6 w-6 text-muted-foreground" />
                       </label>
@@ -473,12 +493,16 @@ export default function NewOrderPage() {
                         </Button>
                       </div>
                     ) : (
-                      <label className="flex h-20 w-32 cursor-pointer items-center justify-center rounded border-2 border-dashed border-muted-foreground/25 hover:border-muted-foreground/50">
+                      <label className="flex h-20 w-32 cursor-pointer items-center justify-center rounded border-2 border-dashed border-muted-foreground/25 hover:border-muted-foreground/50 transition-colors">
                         <input
                           type="file"
                           accept="image/*"
                           className="hidden"
-                          onChange={(e) => handleFileChange("fotoKtpPasangan", e.target.files?.[0] || null)}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) handleFileChange("fotoKtpPasangan", file)
+                            e.target.value = ""
+                          }}
                         />
                         <Upload className="h-6 w-6 text-muted-foreground" />
                       </label>
@@ -507,12 +531,16 @@ export default function NewOrderPage() {
                         </Button>
                       </div>
                     ) : (
-                      <label className="flex h-20 w-32 cursor-pointer items-center justify-center rounded border-2 border-dashed border-muted-foreground/25 hover:border-muted-foreground/50">
+                      <label className="flex h-20 w-32 cursor-pointer items-center justify-center rounded border-2 border-dashed border-muted-foreground/25 hover:border-muted-foreground/50 transition-colors">
                         <input
                           type="file"
                           accept="image/*"
                           className="hidden"
-                          onChange={(e) => handleFileChange("fotoKk", e.target.files?.[0] || null)}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) handleFileChange("fotoKk", file)
+                            e.target.value = ""
+                          }}
                         />
                         <Upload className="h-6 w-6 text-muted-foreground" />
                       </label>
@@ -563,15 +591,15 @@ export default function NewOrderPage() {
                       setFormData((prev) => ({ ...prev, jenisPembiayaan: value as JenisPembiayaan }))
                     }
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Pilih jenis pembiayaan" />
                     </SelectTrigger>
-                    <SelectContent>
-                      {JENIS_PEMBIAYAAN.map((jenis) => (
-                        <SelectItem key={jenis} value={jenis}>
-                          {jenis}
-                        </SelectItem>
-                      ))}
+                    <SelectContent className="z-[100]">
+                      <SelectItem value="Passenger">Passenger</SelectItem>
+                      <SelectItem value="Pick Up">Pick Up</SelectItem>
+                      <SelectItem value="Pass Comm">Pass Comm</SelectItem>
+                      <SelectItem value="Truck">Truck</SelectItem>
+                      <SelectItem value="EV (Listrik)">EV (Listrik)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -587,13 +615,26 @@ export default function NewOrderPage() {
                       <SelectValue placeholder="Pilih program" />
                     </SelectTrigger>
                     <SelectContent>
-                      {filteredPrograms.map((prog) => (
-                        <SelectItem key={prog.id} value={prog.namaProgram}>
-                          {prog.namaProgram}
-                        </SelectItem>
-                      ))}
+                      {filteredPrograms.length > 0 ? (
+                        filteredPrograms.map((prog) => (
+                          <SelectItem key={prog.id} value={prog.namaProgram}>
+                            {prog.namaProgram}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                          {!formData.jenisPembiayaan
+                            ? "Pilih jenis pembiayaan terlebih dahulu"
+                            : `Tidak ada program untuk ${userMerk} - ${formData.jenisPembiayaan}`}
+                        </div>
+                      )}
                     </SelectContent>
                   </Select>
+                  {formData.jenisPembiayaan && filteredPrograms.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Merk: {userMerk || "tidak diset"} | Jenis: {formData.jenisPembiayaan}
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid gap-2">

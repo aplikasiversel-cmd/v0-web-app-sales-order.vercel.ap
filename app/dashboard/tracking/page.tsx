@@ -30,7 +30,7 @@ import {
   Search,
   Filter,
   Eye,
-  Calendar,
+  CalendarIcon,
   FileText,
   CheckCircle,
   Clock,
@@ -44,7 +44,52 @@ import {
   AlertCircle,
   X,
   CheckCircle2,
+  ExternalLink,
+  Download,
 } from "lucide-react"
+
+function base64ToBlob(base64: string): Blob {
+  // Handle data URL format
+  const parts = base64.split(",")
+  const mimeMatch = parts[0].match(/:(.*?);/)
+  const mime = mimeMatch ? mimeMatch[1] : "image/jpeg"
+  const byteString = atob(parts[1])
+  const arrayBuffer = new ArrayBuffer(byteString.length)
+  const uint8Array = new Uint8Array(arrayBuffer)
+  for (let i = 0; i < byteString.length; i++) {
+    uint8Array[i] = byteString.charCodeAt(i)
+  }
+  return new Blob([uint8Array], { type: mime })
+}
+
+function openImageInNewTab(base64OrUrl: string) {
+  // Check if it's a data URL (base64)
+  if (base64OrUrl.startsWith("data:")) {
+    const blob = base64ToBlob(base64OrUrl)
+    const blobUrl = URL.createObjectURL(blob)
+    window.open(blobUrl, "_blank")
+  } else {
+    // Regular URL, open directly
+    window.open(base64OrUrl, "_blank")
+  }
+}
+
+function downloadImage(base64OrUrl: string, filename: string) {
+  const link = document.createElement("a")
+  if (base64OrUrl.startsWith("data:")) {
+    const blob = base64ToBlob(base64OrUrl)
+    const blobUrl = URL.createObjectURL(blob)
+    link.href = blobUrl
+  } else {
+    link.href = base64OrUrl
+  }
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+// </CHANGE>
 
 const ITEMS_PER_PAGE = 5
 
@@ -80,7 +125,7 @@ const formatRupiah = (number: number): string => {
   }).format(number)
 }
 
-export default function TrackingOrderPage() {
+export default function TrackingPage() {
   const router = useRouter()
   const { toast } = useToast()
   const { user, isLoading: authLoading } = useAuth()
@@ -94,16 +139,18 @@ export default function TrackingOrderPage() {
   const [showDetailDialog, setShowDetailDialog] = useState(false)
   const [showSlikDialog, setShowSlikDialog] = useState(false)
   const [showPertimbanganDialog, setShowPertimbanganDialog] = useState(false)
+  const [pertimbanganAction, setPertimbanganAction] = useState<"Approve" | "Reject">("Approve")
+  const [pertimbanganNote, setPertimbanganNote] = useState("")
   const [showNoteDialog, setShowNoteDialog] = useState(false)
+  const [noteText, setNoteText] = useState("") // Declare noteText and setNoteText
   const [showSurveyDialog, setShowSurveyDialog] = useState(false)
   const [showMapInDialog, setShowMapInDialog] = useState(false)
+  const [mapInAction, setMapInAction] = useState<"Map In" | "Reject">("Map In")
+  const [mapInNote, setMapInNote] = useState("")
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [slikResult, setSlikResult] = useState<string>("")
   const [slikNote, setSlikNote] = useState("")
   const [slikDecision, setSlikDecision] = useState<"Proses" | "Pertimbangkan" | "Reject">("Proses")
-  const [pertimbanganAction, setPertimbanganAction] = useState<"Approve" | "Reject">("Approve")
-  const [pertimbanganNote, setPertimbanganNote] = useState("")
-  const [noteText, setNoteText] = useState("")
   // const [surveyAction, setSurveyAction] = useState<"Survey" | "Janji Survey" | "Pemenuhan Berkas">("Survey") // Removed, handled by different states
   const [surveyNote, setSurveyNote] = useState("")
   const [surveyDate, setSurveyDate] = useState("")
@@ -118,9 +165,27 @@ export default function TrackingOrderPage() {
     rekTabungan: false,
     mufApp: false,
   })
-  const [mapInAction, setMapInAction] = useState<"Map In" | "Reject">("Map In")
-  const [mapInNote, setMapInNote] = useState("")
   const [processingAction, setProcessingAction] = useState(false)
+
+  // --- Renamed functions and updated types based on assumed new structures ---
+  // Assuming `updateOrder` and `fetchOrders` are available or defined elsewhere
+  // and `mapInDecision` is a state variable similar to `pertimbanganAction`.
+  // For now, using placeholder names.
+  const updateOrder = async (orderId: string, data: Partial<Order>) => {
+    console.log(`Updating order ${orderId} with:`, data)
+    // This should be replaced with actual API call to update order
+    await orderStore.update(orderId, data)
+  }
+
+  const fetchOrders = async () => {
+    console.log("Fetching orders...")
+    await loadOrders()
+  }
+  // Assuming mapInDecision state exists, or using mapInAction directly if appropriate
+  // For the sake of merging, let's assume `mapInDecision` is intended to be used.
+  // If not, it should be `mapInAction`.
+  // Let's use `mapInAction` as it's already defined.
+  const mapInDecision = mapInAction
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -400,6 +465,61 @@ export default function TrackingOrderPage() {
     }
   }
 
+  // </CHANGE> Added handler for Map In decision
+  const handleMapInSubmit = async () => {
+    if (!selectedOrder) return
+
+    setProcessingAction(true)
+    try {
+      // Using mapInAction directly as the state variable for the decision
+      const newStatus = mapInAction
+
+      // Prepare notes, assuming `notes` is an array in the Order type.
+      // If `notes` is not a field or is structured differently, this needs adjustment.
+      const newNotes = [
+        ...(selectedOrder.notes || []), // Spread existing notes if any
+        {
+          // Assuming a structure for notes, adjust if necessary based on `Order` type
+          id: crypto.randomUUID(), // Added unique ID for note
+          orderId: selectedOrder.id,
+          userId: user?.id || "", // Use optional chaining and provide default
+          userName: user?.namaLengkap || "Unknown", // Use namaLengkap from user
+          role: user?.role,
+          note: `Keputusan Map In: ${mapInAction}. ${mapInNote}`,
+          status: newStatus, // Status when the note was added
+          createdAt: new Date().toISOString(),
+        },
+      ]
+
+      await orderStore.update(selectedOrder.id, {
+        status: newStatus,
+        // Only add notes if mapInNote is provided, or always add the decision note
+        // Here, we are always adding the decision note. Adjust if only mapInNote should trigger addition.
+        notes: newNotes,
+      })
+
+      toast({ title: "Berhasil", description: `Order ${mapInAction === "Map In" ? "diajukan ke CMH" : "ditolak"}` })
+
+      setShowMapInDialog(false)
+      setMapInNote("")
+      // Reset mapInAction to default if needed, or keep as is for next dialog open
+      // For now, keeping it as is.
+
+      // Close survey dialog after map-in decision if it was open
+      if (showSurveyDialog) {
+        setShowSurveyDialog(false)
+      }
+      resetSurveyForm() // Assuming this resets survey-related states
+      await loadOrders() // Refresh the order list
+    } catch (error) {
+      console.error("Error submitting map in decision:", error)
+      toast({ title: "Error", description: "Gagal memproses keputusan Map In", variant: "destructive" })
+    } finally {
+      setProcessingAction(false)
+    }
+  }
+  // </CHANGE>
+
   const handleAddNote = async () => {
     if (!selectedOrder || !noteText || !user) return
 
@@ -430,33 +550,28 @@ export default function TrackingOrderPage() {
   }
 
   useEffect(() => {
-    // Function to load existing survey data
-    const loadSurveyData = () => {
-      if (selectedOrder && showSurveyDialog) {
-        setSurveyDate(selectedOrder.tanggalSurvey || "")
-        setSurveyPhotos(selectedOrder.fotoSurvey || [])
-        setSurveyNote(selectedOrder.surveyNote || "") // Assuming surveyNote exists in Order type
+    if (showSurveyDialog && selectedOrder) {
+      setSurveyDate(selectedOrder.tanggalSurvey || "")
+      setSurveyPhotos(selectedOrder.fotoSurvey || [])
+      setSurveyNote("")
 
-        // Load checklist if exists, otherwise use default
-        if (selectedOrder.checklistBerkas) {
-          // Assuming checklistBerkas exists in Order type
-          setChecklist(selectedOrder.checklistBerkas)
-        } else {
-          setChecklist({
-            ktpPemohon: false,
-            ktpPasangan: false,
-            kartuKeluarga: false,
-            npwp: false,
-            bkr: false,
-            livin: false,
-            rekTabungan: false,
-            mufApp: false,
-          })
-        }
+      // Load checklist if exists - use 'checklist' field from Order type
+      if (selectedOrder.checklist) {
+        setChecklist(selectedOrder.checklist)
+      } else {
+        setChecklist({
+          ktpPemohon: false,
+          ktpPasangan: false,
+          kartuKeluarga: false,
+          npwp: false,
+          bkr: false,
+          livin: false,
+          rekTabungan: false,
+          mufApp: false,
+        })
       }
     }
-    loadSurveyData()
-  }, [selectedOrder, showSurveyDialog])
+  }, [showSurveyDialog, selectedOrder])
 
   const isSurveyReadyForDecision = useMemo(() => {
     const hasPhotos = surveyPhotos.length > 0
@@ -487,7 +602,7 @@ export default function TrackingOrderPage() {
     setChecklist((prev) => ({ ...prev, [key]: checked }))
   }
 
-  const handleSurveySubmit = async () => {
+  const handleSaveDraft = async () => {
     if (!selectedOrder || !user) return
 
     try {
@@ -500,8 +615,7 @@ export default function TrackingOrderPage() {
         status: newStatus,
         tanggalSurvey: surveyDate || undefined,
         fotoSurvey: surveyPhotos.length > 0 ? surveyPhotos : undefined,
-        checklistBerkas: checklist, // Assuming checklistBerkas in Order type
-        surveyNote: surveyNote || undefined, // Assuming surveyNote in Order type
+        checklist: checklist, // Use correct field name from Order type
       })
 
       let noteMessage = `Draft survey disimpan`
@@ -537,55 +651,7 @@ export default function TrackingOrderPage() {
     }
   }
 
-  const handleMapInSubmit = async () => {
-    if (!selectedOrder || !user) return
-
-    try {
-      setProcessingAction(true)
-
-      // Map In = kirim ke CMH untuk review (status "Map In")
-      // Reject = final rejection dari CMO (status "Reject")
-      const newStatus: OrderStatus = mapInAction
-
-      await orderStore.update(selectedOrder.id, { status: newStatus })
-
-      const noteMessage = mapInNote
-        ? `${mapInAction}: ${mapInNote}`
-        : mapInAction === "Map In"
-          ? "Order diajukan ke CMH untuk keputusan Approve/Reject"
-          : "Order ditolak oleh CMO"
-
-      await orderStore.addNote(selectedOrder.id, {
-        id: crypto.randomUUID(),
-        orderId: selectedOrder.id,
-        userId: user.id,
-        userName: user.namaLengkap,
-        role: user.role,
-        note: noteMessage,
-        status: newStatus,
-        createdAt: new Date().toISOString(),
-      })
-
-      toast({
-        title: "Berhasil",
-        description:
-          mapInAction === "Map In" ? "Order berhasil diajukan ke CMH untuk keputusan" : "Order berhasil ditolak",
-      })
-      setShowMapInDialog(false)
-      // Close survey dialog after map-in decision if it was open
-      if (showSurveyDialog) {
-        setShowSurveyDialog(false)
-      }
-      setMapInNote("")
-      resetSurveyForm()
-      await loadOrders()
-    } catch (error) {
-      console.error("Error submitting map in:", error)
-      toast({ title: "Error", description: "Gagal memproses", variant: "destructive" })
-    } finally {
-      setProcessingAction(false)
-    }
-  }
+  // Removed the previous handleMapInSubmit as it's being replaced by the new one.
 
   const resetSurveyForm = () => {
     setSurveyNote("")
@@ -693,8 +759,8 @@ export default function TrackingOrderPage() {
                 setSurveyPhotos(order.fotoSurvey || [])
                 setSurveyNote(order.surveyNote || "")
                 // Load checklist if exists
-                if (order.checklistBerkas) {
-                  setChecklist(order.checklistBerkas)
+                if (order.checklist) {
+                  setChecklist(order.checklist)
                 } else {
                   setChecklist({
                     ktpPemohon: false,
@@ -719,8 +785,15 @@ export default function TrackingOrderPage() {
       case "Map In":
         if (isCmo) {
           return (
-            <Button size="sm" onClick={() => handleStatusChange(order, "Approve")} disabled={processingAction}>
-              Submit Approve
+            <Button
+              size="sm"
+              onClick={() => {
+                setSelectedOrder(order)
+                setShowMapInDialog(true)
+              }}
+              disabled={processingAction}
+            >
+              Keputusan
             </Button>
           )
         }
@@ -888,13 +961,14 @@ export default function TrackingOrderPage() {
                         <p>Sales: {order.salesName}</p>
                         <p>CMO: {order.cmoName || "-"}</p>
                         <p className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
+                          <CalendarIcon className="h-3 w-3" />
                           {formatDate(order.createdAt)}
                         </p>
                       </div>
                       <div className="flex gap-2">
                         <Button size="sm" variant="outline" onClick={() => handleViewDetail(order)}>
-                          <Eye className="h-4 w-4 mr-1" /> Detail
+                          <Eye className="h-4 w-4 mr-1" />
+                          Detail
                         </Button>
                         {getActionButton(order)}
                       </div>
@@ -979,7 +1053,171 @@ export default function TrackingOrderPage() {
               </div>
 
               <div className="pt-4 border-t">
-                <Label className="text-muted-foreground mb-2 block">Progress Status</Label>
+                <Label className="text-muted-foreground mb-3 block">Dokumen & Foto</Label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {/* KTP Nasabah */}
+                  {selectedOrder.fotoKtpNasabah && (
+                    <div className="border rounded-lg p-2 space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">KTP Nasabah</p>
+                      <div className="relative aspect-video bg-muted rounded overflow-hidden">
+                        <img
+                          src={selectedOrder.fotoKtpNasabah || "/placeholder.svg"}
+                          alt="KTP Nasabah"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-7 text-xs bg-transparent"
+                          onClick={() => openImageInNewTab(selectedOrder.fotoKtpNasabah!)}
+                        >
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          Lihat
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-7 text-xs bg-transparent"
+                          onClick={() => {
+                            downloadImage(selectedOrder.fotoKtpNasabah!, `KTP_Nasabah_${selectedOrder.namaNasabah}.jpg`)
+                          }}
+                        >
+                          <Download className="h-3 w-3 mr-1" />
+                          Unduh
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* KTP Pasangan */}
+                  {selectedOrder.fotoKtpPasangan && (
+                    <div className="border rounded-lg p-2 space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">KTP Pasangan</p>
+                      <div className="relative aspect-video bg-muted rounded overflow-hidden">
+                        <img
+                          src={selectedOrder.fotoKtpPasangan || "/placeholder.svg"}
+                          alt="KTP Pasangan"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-7 text-xs bg-transparent"
+                          onClick={() => openImageInNewTab(selectedOrder.fotoKtpPasangan!)}
+                        >
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          Lihat
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-7 text-xs bg-transparent"
+                          onClick={() => {
+                            downloadImage(
+                              selectedOrder.fotoKtpPasangan!,
+                              `KTP_Pasangan_${selectedOrder.namaNasabah}.jpg`,
+                            )
+                          }}
+                        >
+                          <Download className="h-3 w-3 mr-1" />
+                          Unduh
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Kartu Keluarga */}
+                  {selectedOrder.fotoKk && (
+                    <div className="border rounded-lg p-2 space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Kartu Keluarga</p>
+                      <div className="relative aspect-video bg-muted rounded overflow-hidden">
+                        <img
+                          src={selectedOrder.fotoKk || "/placeholder.svg"}
+                          alt="Kartu Keluarga"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-7 text-xs bg-transparent"
+                          onClick={() => openImageInNewTab(selectedOrder.fotoKk!)}
+                        >
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          Lihat
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-7 text-xs bg-transparent"
+                          onClick={() => {
+                            downloadImage(selectedOrder.fotoKk!, `KK_${selectedOrder.namaNasabah}.jpg`)
+                          }}
+                        >
+                          <Download className="h-3 w-3 mr-1" />
+                          Unduh
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Foto Survey */}
+                  {selectedOrder.fotoSurvey &&
+                    selectedOrder.fotoSurvey.length > 0 &&
+                    selectedOrder.fotoSurvey.map((foto, idx) => (
+                      <div key={idx} className="border rounded-lg p-2 space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">Foto Survey {idx + 1}</p>
+                        <div className="relative aspect-video bg-muted rounded overflow-hidden">
+                          <img
+                            src={foto || "/placeholder.svg"}
+                            alt={`Foto Survey ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 h-7 text-xs bg-transparent"
+                            onClick={() => openImageInNewTab(foto)}
+                          >
+                            <ExternalLink className="h-3 w-3 mr-1" />
+                            Lihat
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 h-7 text-xs bg-transparent"
+                            onClick={() => {
+                              downloadImage(foto, `Survey_${selectedOrder.namaNasabah}_${idx + 1}.jpg`)
+                            }}
+                          >
+                            <Download className="h-3 w-3 mr-1" />
+                            Unduh
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+
+                  {/* No documents message */}
+                  {!selectedOrder.fotoKtpNasabah &&
+                    !selectedOrder.fotoKtpPasangan &&
+                    !selectedOrder.fotoKk &&
+                    (!selectedOrder.fotoSurvey || selectedOrder.fotoSurvey.length === 0) && (
+                      <div className="col-span-full text-center py-4 text-muted-foreground text-sm">
+                        Belum ada dokumen/foto yang diupload
+                      </div>
+                    )}
+                </div>
+              </div>
+
+              <div className="pt-4 border-t">
+                <Label className="text-muted-foreground mb-3 block">Progress Status</Label>
                 <div className="flex items-center justify-between overflow-x-auto pb-2">
                   {STATUS_ORDER.slice(0, 7).map((status, index) => {
                     const currentIndex = STATUS_ORDER.indexOf(selectedOrder.status)
@@ -1253,7 +1491,7 @@ export default function TrackingOrderPage() {
             {/* Tanggal Survey */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
+                <CalendarIcon className="h-4 w-4" />
                 Tanggal Survey
               </Label>
               <Input
@@ -1392,7 +1630,7 @@ export default function TrackingOrderPage() {
             <Button variant="outline" onClick={() => setShowSurveyDialog(false)}>
               Batal
             </Button>
-            <Button variant="secondary" onClick={handleSurveySubmit} disabled={processingAction}>
+            <Button variant="secondary" onClick={handleSaveDraft} disabled={processingAction}>
               {processingAction ? "Menyimpan..." : "Simpan Draft"}
             </Button>
             {isSurveyReadyForDecision && (

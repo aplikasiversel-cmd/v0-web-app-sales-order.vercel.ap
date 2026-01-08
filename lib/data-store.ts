@@ -123,6 +123,7 @@ function mapOrder(order: any): Order {
     hasilSlik: order.hasilSlik || order.hasil_slik,
     tanggalSurvey: order.tanggalSurvey || order.tanggal_survey,
     fotoSurvey: order.fotoSurvey || order.foto_survey || [],
+    checklist: order.checklist || undefined,
     claimedBy: order.claimedBy || order.claimed_by,
     claimedAt: order.claimedAt || order.claimed_at,
     createdAt: order.createdAt || order.created_at || new Date().toISOString(),
