@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { FileText, ClipboardList, CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight } from "lucide-react"
+import { FileText, ClipboardList, CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight, X } from "lucide-react"
 import { DashboardHeader } from "@/components/dashboard/header"
 import { StatsCard } from "@/components/dashboard/stats-card"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,6 +20,7 @@ export default function DashboardPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
+  const [selectedStatus, setSelectedStatus] = useState<OrderStatus | null>(null)
 
   const isSales = user?.role === "sales"
   const isSPV = user?.role === "spv"
@@ -110,13 +111,26 @@ export default function DashboardPage() {
     return <Badge className={cn("font-medium", styles[status])}>{status}</Badge>
   }
 
-  const sortedOrders = [...orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  const filteredByStatus = selectedStatus ? orders.filter((o) => o.status === selectedStatus) : orders
 
-  const totalOrders = orders.length
+  const sortedOrders = [...filteredByStatus].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  )
+
+  const totalOrders = filteredByStatus.length
   const totalPages = Math.ceil(totalOrders / ITEMS_PER_PAGE)
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
   const endIndex = startIndex + ITEMS_PER_PAGE
   const paginatedOrders = sortedOrders.slice(startIndex, endIndex)
+
+  const handleStatusClick = (status: OrderStatus) => {
+    if (selectedStatus === status) {
+      setSelectedStatus(null) // Toggle off if already selected
+    } else {
+      setSelectedStatus(status)
+    }
+    setCurrentPage(1) // Reset to first page when filter changes
+  }
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -158,36 +172,63 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Ringkasan Status Order</CardTitle>
-            <CardDescription>Status semua order Anda</CardDescription>
+            <CardDescription>
+              {selectedStatus ? `Filter aktif: ${selectedStatus}` : "Status semua order Anda - Klik untuk filter"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-4 sm:grid-cols-4 lg:grid-cols-8 gap-2 md:gap-3">
               {(
                 ["Baru", "Claim", "Cek Slik", "Proses", "Pertimbangkan", "Map In", "Approve", "Reject"] as OrderStatus[]
               ).map((status) => (
-                <div key={status} className="text-center p-2 md:p-3 rounded-lg bg-muted/50">
+                <button
+                  key={status}
+                  onClick={() => handleStatusClick(status)}
+                  className={cn(
+                    "text-center p-2 md:p-3 rounded-lg transition-all cursor-pointer",
+                    "hover:ring-2 hover:ring-primary/50 hover:bg-muted",
+                    selectedStatus === status ? "bg-primary/10 ring-2 ring-primary" : "bg-muted/50",
+                  )}
+                >
                   <p className="text-xl md:text-2xl font-bold">{getStatusCount(status)}</p>
                   <p className="text-[10px] md:text-xs text-muted-foreground mt-1 truncate">{status}</p>
-                </div>
+                </button>
               ))}
             </div>
+            {selectedStatus && (
+              <div className="mt-3 flex justify-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedStatus(null)
+                    setCurrentPage(1)
+                  }}
+                  className="text-xs"
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Hapus Filter
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 
         {/* Recent Orders - With Pagination */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Order Terbaru</CardTitle>
+            <CardTitle className="text-lg">{selectedStatus ? `Order ${selectedStatus}` : "Order Terbaru"}</CardTitle>
             <CardDescription>
               Menampilkan {paginatedOrders.length > 0 ? startIndex + 1 : 0} - {Math.min(endIndex, totalOrders)} dari{" "}
               {totalOrders} order
+              {selectedStatus && ` (Filter: ${selectedStatus})`}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {paginatedOrders.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <ClipboardList className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>Belum ada order</p>
+                <p>{selectedStatus ? `Tidak ada order dengan status ${selectedStatus}` : "Belum ada order"}</p>
               </div>
             ) : (
               <div className="space-y-2">
