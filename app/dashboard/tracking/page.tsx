@@ -213,7 +213,6 @@ export default function TrackingPage() {
         // Admin dan CMH melihat semua order
         ordersData = allOrders
       } else if (user.role === "spv") {
-        // SPV hanya melihat order dari sales yang ditugaskan kepadanya
         const allSales = await userStore.getByRole("sales")
         console.log("[v0] TrackingPage - allSales count:", allSales.length)
 
@@ -233,13 +232,20 @@ export default function TrackingPage() {
         const salesUsernames = salesUnderSPV.map((s: User) => s.username)
         const salesNames = salesUnderSPV.map((s: User) => s.namaLengkap?.toLowerCase())
 
+        // Filter orders: dari sales di bawah SPV ATAU diinput langsung oleh SPV
         ordersData = allOrders.filter(
           (order: Order) =>
+            // Orders dari sales di bawah SPV
             salesIds.includes(order.salesId) ||
             salesUsernames.includes(order.salesId) ||
-            salesNames.includes(order.salesName?.toLowerCase()),
+            salesNames.includes(order.salesName?.toLowerCase()) ||
+            // Orders yang diinput langsung oleh SPV sendiri
+            order.salesId === user.id ||
+            order.salesId === user.username ||
+            order.salesName === user.namaLengkap ||
+            order.salesName?.toLowerCase() === user.namaLengkap?.toLowerCase(),
         )
-        console.log("[v0] TrackingPage - spv filtered orders:", ordersData.length)
+        console.log("[v0] TrackingPage - spv filtered orders (including self-input):", ordersData.length)
       } else if (user.role === "cmo") {
         // CMO melihat order yang ditugaskan kepadanya
         ordersData = allOrders.filter(
@@ -608,8 +614,8 @@ export default function TrackingPage() {
     try {
       setProcessingAction(true)
 
-      // Simpan sebagai draft - status tetap "Survey" atau "Proses" jika pertama kali
-      const newStatus: OrderStatus = selectedOrder.status === "Proses" ? "Survey" : selectedOrder.status
+      // Simpan sebagai draft - status tetap "Proses"
+      const newStatus: OrderStatus = "Proses"
 
       await orderStore.update(selectedOrder.id, {
         status: newStatus,

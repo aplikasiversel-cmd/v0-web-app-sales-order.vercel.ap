@@ -37,11 +37,36 @@ export default function DashboardPage() {
         if (user.role === "sales") {
           fetchedOrders = await orderStore.getBySalesId(user.id)
         } else if (user.role === "spv") {
-          // SPV sees orders from sales under them
+          // SPV sees orders from sales under them AND orders they input themselves
           const allOrders = await orderStore.getAll()
-          const salesUnderSPV = await userStore.getByRole("sales")
-          const salesIds = salesUnderSPV.filter((s: User) => s.spvId === user.id).map((s: User) => s.id)
-          fetchedOrders = allOrders.filter((o) => salesIds.includes(o.salesId))
+          const allSales = await userStore.getByRole("sales")
+
+          // Find sales assigned to this SPV
+          const salesUnderSPV = allSales.filter(
+            (s: User) =>
+              s.spvId === user.id ||
+              s.spvId === user.username ||
+              s.spvName === user.namaLengkap ||
+              s.spvName?.toLowerCase() === user.namaLengkap?.toLowerCase(),
+          )
+
+          const salesIds = salesUnderSPV.map((s: User) => s.id)
+          const salesUsernames = salesUnderSPV.map((s: User) => s.username)
+          const salesNames = salesUnderSPV.map((s: User) => s.namaLengkap?.toLowerCase())
+
+          // Filter orders: from sales under SPV OR directly input by SPV themselves
+          fetchedOrders = allOrders.filter(
+            (o: Order) =>
+              // Orders from sales under SPV
+              salesIds.includes(o.salesId) ||
+              salesUsernames.includes(o.salesId) ||
+              salesNames.includes(o.salesName?.toLowerCase()) ||
+              // Orders that SPV input themselves
+              o.salesId === user.id ||
+              o.salesId === user.username ||
+              o.salesName === user.namaLengkap ||
+              o.salesName?.toLowerCase() === user.namaLengkap?.toLowerCase(),
+          )
         } else if (user.role === "cmo") {
           const allOrders = await orderStore.getAll()
           const ordersArray = Array.isArray(allOrders) ? allOrders : []
