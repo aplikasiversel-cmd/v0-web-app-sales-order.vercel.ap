@@ -46,6 +46,7 @@ import {
   CheckCircle2,
   ExternalLink,
   Download,
+  XCircle,
 } from "lucide-react"
 
 function base64ToBlob(base64: string): Blob {
@@ -1225,35 +1226,57 @@ export default function TrackingPage() {
               <div className="pt-4 border-t">
                 <Label className="text-muted-foreground mb-3 block">Progress Status</Label>
                 <div className="flex items-center justify-between overflow-x-auto pb-2">
-                  {STATUS_ORDER.slice(0, 7).map((status, index) => {
-                    const currentIndex = STATUS_ORDER.indexOf(selectedOrder.status)
-                    const statusIndex = index
-                    const isCompleted = statusIndex < currentIndex
-                    const isCurrent = status === selectedOrder.status
+                  {(() => {
+                    const isRejected = selectedOrder.status === "Reject"
+                    // For rejected orders, show progress up to where it was rejected, then show Reject
+                    // We'll show: Baru, Claim, Cek Slik, Proses, Pertimbangkan, Map In, then Reject (red)
+                    const displayStatuses = isRejected
+                      ? ([...STATUS_ORDER.slice(0, 6), "Reject"] as OrderStatus[])
+                      : STATUS_ORDER.slice(0, 7)
 
-                    return (
-                      <div key={status} className="flex flex-col items-center min-w-[60px]">
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                            isCompleted
-                              ? "bg-green-500 text-white"
-                              : isCurrent
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted text-muted-foreground"
-                          }`}
-                        >
-                          {isCompleted ? (
-                            <CheckCircle className="h-4 w-4" />
-                          ) : isCurrent ? (
-                            <Clock className="h-4 w-4" />
-                          ) : (
-                            <Circle className="h-4 w-4" />
-                          )}
+                    return displayStatuses.map((status, index) => {
+                      const isRejectStatus = status === "Reject"
+                      // For rejected orders, the "current" status is Reject. For others, it's the actual status.
+                      // The `currentIndex` calculation for `isCompleted` should be based on the actual order status, not "Reject" if the order is not rejected.
+                      // If the order is rejected, we consider progress up to "Map In" as completed.
+                      const actualStatusIndex = STATUS_ORDER.indexOf(selectedOrder.status)
+                      const completedUntilIndex = isRejected ? 5 : actualStatusIndex
+
+                      const isCompleted = !isRejected && index <= completedUntilIndex
+                      const isCurrent = status === selectedOrder.status || (isRejected && isRejectStatus)
+
+                      return (
+                        <div key={status} className="flex flex-col items-center min-w-[60px]">
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                              isRejectStatus
+                                ? "bg-red-500 text-white"
+                                : isCompleted
+                                  ? "bg-green-500 text-white"
+                                  : isCurrent
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {isRejectStatus ? (
+                              <XCircle className="h-4 w-4" />
+                            ) : isCompleted ? (
+                              <CheckCircle className="h-4 w-4" />
+                            ) : isCurrent ? (
+                              <Clock className="h-4 w-4" />
+                            ) : (
+                              <Circle className="h-4 w-4" />
+                            )}
+                          </div>
+                          <span
+                            className={`text-xs mt-1 text-center ${isRejectStatus ? "text-red-500 font-medium" : ""}`}
+                          >
+                            {status}
+                          </span>
                         </div>
-                        <span className="text-xs mt-1 text-center">{status}</span>
-                      </div>
-                    )
-                  })}
+                      )
+                    })
+                  })()}
                 </div>
               </div>
 
