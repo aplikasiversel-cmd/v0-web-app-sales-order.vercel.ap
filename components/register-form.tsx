@@ -14,7 +14,7 @@ import { useAuth } from "@/lib/auth-context"
 import { DEALER_BY_MERK } from "@/lib/types"
 import { validatePassword, validateNoHp } from "@/lib/utils/format"
 import { getDealers, getMerks } from "@/app/actions/db-actions"
-import { userStore } from "@/lib/data-store"
+import { userStore, merkStore } from "@/lib/data-store"
 import {
   Dialog,
   DialogContent,
@@ -41,6 +41,10 @@ interface SpvItem {
   dealer: string
 }
 
+interface MerkIdToName {
+  [key: string]: string
+}
+
 export function RegisterForm({ onLogin }: RegisterFormProps) {
   const router = useRouter()
   const { register } = useAuth()
@@ -62,6 +66,7 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
   const [availableDealers, setAvailableDealers] = useState<DealerItem[]>([])
   const [filteredDealers, setFilteredDealers] = useState<DealerItem[]>([])
   const [spvList, setSpvList] = useState<SpvItem[]>([])
+  const [merkIdToNameMap, setMerkIdToNameMap] = useState<MerkIdToName>({})
   const [passwordValidation, setPasswordValidation] = useState<{ valid: boolean; errors: string[] }>({
     valid: false,
     errors: [],
@@ -82,10 +87,17 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
         })
       })
 
+      // Load merks from Firebase dan buat map ID -> Nama
       let dbMerks: string[] = []
+      let merkIdMap: MerkIdToName = {}
       try {
-        const merksFromDb = await getMerks()
+        const merksFromDb = await merkStore.getAll()
         dbMerks = merksFromDb.map((m) => m.nama)
+        // Buat map merkId -> merkNama untuk konversi nanti
+        merksFromDb.forEach((m) => {
+          merkIdMap[m.id] = m.nama
+        })
+        setMerkIdToNameMap(merkIdMap)
       } catch (error) {
         console.error("Error loading merks from database:", error)
       }
@@ -108,13 +120,26 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
         const allUsers = await userStore.getAll()
         const spvUsers = allUsers
           .filter((u) => u.role === "spv" && u.isActive)
-          .map((u) => ({
-            id: u.id,
-            namaLengkap: u.namaLengkap,
-            merk: u.merk || "",
-            dealer: u.dealer || "",
-          }))
+          .map((u) => {
+            // Convert merk ID to merk name
+            let merkName = ""
+            if (Array.isArray(u.merk) && u.merk.length > 0) {
+              // Jika merk adalah array, ambil elemen pertama dan convert ID ke nama
+              merkName = merkIdMap[u.merk[0]] || u.merk[0]
+            } else if (typeof u.merk === "string") {
+              // Jika merk adalah string, coba convert dari ID ke nama, jika tidak ada pakai as-is
+              merkName = merkIdMap[u.merk] || u.merk
+            }
+            return {
+              id: u.id,
+              namaLengkap: u.namaLengkap,
+              merk: merkName,
+              dealer: u.dealer || "",
+            }
+          })
+          .filter((spv) => spv.merk && spv.dealer) // Hanya include SPV yang memiliki merk dan dealer
         setSpvList(spvUsers)
+        console.log("[v0] RegisterForm - SPV list loaded:", spvUsers.length, "SPVs", "Map:", merkIdMap)
       } catch (error) {
         console.error("Error loading SPV list:", error)
       }
@@ -168,8 +193,17 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
 
   const filteredSpvList = useMemo(() => {
     if (!formData.merk || !formData.dealer) return []
-    return spvList.filter((spv) => spv.merk === formData.merk && spv.dealer === formData.dealer)
-  }, [spvList, formData.merk, formData.dealer])
+    const filtered = spvList.filter((spv) => spv.merk === formData.merk && spv.dealer === formData.dealer)
+    console.log("[v0] RegisterForm - filteredSpvList:", { 
+      merk: formData.merk, 
+      dealer: formData.dealer, 
+      count: filtered.length, 
+      filtered,
+      allSpv: spvList,
+      merkMap: merkIdToNameMap 
+    })
+    return filtered
+  }, [spvList, formData.merk, formData.dealer, merkIdToNameMap])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -339,7 +373,10 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
                 <Label htmlFor="spv">SPV (Atasan)</Label>
                 <Select
                   value={formData.spvId}
-                  onValueChange={(value) => setFormData((prev) => ({ ...prev, spvId: value }))}
+                  onValueChange={(value) => {
+                    console.log("[v0] RegisterForm - SPV selected:", value)
+                    setFormData((prev) => ({ ...prev, spvId: value }))
+                  }}
                   disabled={isLoading || !formData.merk || !formData.dealer}
                 >
                   <SelectTrigger>
@@ -355,13 +392,24 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Tidak ada SPV</SelectItem>
-                    {filteredSpvList.map((spv) => (
-                      <SelectItem key={spv.id} value={spv.id}>
-                        {spv.namaLengkap}
+                    {filteredSpvList.length > 0 ? (
+                      filteredSpvList.map((spv) => (
+                        <SelectItem key={spv.id} value={spv.id}>
+                          {spv.namaLengkap}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="_no_spv" disabled>
+                        Tidak ada SPV untuk kombinasi ini
                       </SelectItem>
-                    ))}
+                    )}
                   </SelectContent>
                 </Select>
+                {filteredSpvList.length > 0 && (
+                  <p className="text-xs text-green-600">
+                    ✓ {filteredSpvList.length} SPV tersedia untuk dealer ini
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   SPV yang tersedia sesuai dengan merk dan dealer yang dipilih
                 </p>
