@@ -790,7 +790,7 @@ export default function TrackingPage() {
         }
         break
       case "Map In":
-        if (isCmo) {
+        if (isCmo || isCmh) {
           return (
             <Button
               size="sm"
