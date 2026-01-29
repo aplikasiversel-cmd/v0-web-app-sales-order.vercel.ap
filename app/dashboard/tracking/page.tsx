@@ -148,6 +148,9 @@ export default function TrackingPage() {
   const [showMapInDialog, setShowMapInDialog] = useState(false)
   const [mapInAction, setMapInAction] = useState<"Map In" | "Reject">("Map In")
   const [mapInNote, setMapInNote] = useState("")
+  const [showCmhNoteDialog, setShowCmhNoteDialog] = useState(false)
+  const [cmhDecision, setCmhDecision] = useState<"Approve" | "Reject" | null>(null)
+  const [cmhNote, setCmhNote] = useState("")
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [slikResult, setSlikResult] = useState<string>("")
   const [slikNote, setSlikNote] = useState("")
@@ -1695,38 +1698,12 @@ export default function TrackingPage() {
               <div className="grid grid-cols-2 gap-3">
                 <Button
                   variant="default"
-                  onClick={async () => {
-                    setProcessingAction(true)
-                    try {
-                      if (!selectedOrder) return
-                      const newNotes = [
-                        ...(selectedOrder.notes || []),
-                        {
-                          id: crypto.randomUUID(),
-                          orderId: selectedOrder.id,
-                          userId: user?.id || "",
-                          userName: user?.namaLengkap || "Unknown",
-                          role: user?.role,
-                          note: "Keputusan MH: Approve",
-                          status: "Approve",
-                          createdAt: new Date().toISOString(),
-                        },
-                      ]
-                      await orderStore.update(selectedOrder.id, {
-                        status: "Approve",
-                        notes: newNotes,
-                      })
-                      toast({ title: "Berhasil", description: "Order disetujui" })
-                      setShowMapInDialog(false)
-                      await loadOrders()
-                    } catch (error) {
-                      console.error("Error approving order:", error)
-                      toast({ title: "Error", description: "Gagal menyetujui order", variant: "destructive" })
-                    } finally {
-                      setProcessingAction(false)
-                    }
+                  onClick={() => {
+                    setCmhDecision("Approve")
+                    setCmhNote("")
+                    setShowCmhNoteDialog(true)
                   }}
-                  disabled={processingAction}
+                  disabled={processingAction || showCmhNoteDialog}
                   className="bg-green-600 hover:bg-green-700"
                 >
                   <CheckCircle2 className="h-4 w-4 mr-2" />
@@ -1734,38 +1711,12 @@ export default function TrackingPage() {
                 </Button>
                 <Button
                   variant="destructive"
-                  onClick={async () => {
-                    setProcessingAction(true)
-                    try {
-                      if (!selectedOrder) return
-                      const newNotes = [
-                        ...(selectedOrder.notes || []),
-                        {
-                          id: crypto.randomUUID(),
-                          orderId: selectedOrder.id,
-                          userId: user?.id || "",
-                          userName: user?.namaLengkap || "Unknown",
-                          role: user?.role,
-                          note: "Keputusan MH: Reject",
-                          status: "Reject",
-                          createdAt: new Date().toISOString(),
-                        },
-                      ]
-                      await orderStore.update(selectedOrder.id, {
-                        status: "Reject",
-                        notes: newNotes,
-                      })
-                      toast({ title: "Berhasil", description: "Order ditolak" })
-                      setShowMapInDialog(false)
-                      await loadOrders()
-                    } catch (error) {
-                      console.error("Error rejecting order:", error)
-                      toast({ title: "Error", description: "Gagal menolak order", variant: "destructive" })
-                    } finally {
-                      setProcessingAction(false)
-                    }
+                  onClick={() => {
+                    setCmhDecision("Reject")
+                    setCmhNote("")
+                    setShowCmhNoteDialog(true)
                   }}
-                  disabled={processingAction}
+                  disabled={processingAction || showCmhNoteDialog}
                 >
                   <XCircle className="h-4 w-4 mr-2" />
                   Reject
@@ -1844,6 +1795,144 @@ export default function TrackingPage() {
               </DialogFooter>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* CMH Note Input Dialog */}
+      <Dialog open={showCmhNoteDialog} onOpenChange={setShowCmhNoteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {cmhDecision === "Approve" ? "Keputusan Approve" : "Keputusan Reject"}
+            </DialogTitle>
+            <DialogDescription>
+              Berikan catatan/alasan untuk keputusan {cmhDecision === "Approve" ? "approve" : "reject"} order{" "}
+              {selectedOrder?.namaNasabah}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div
+              className={`p-3 rounded-lg ${
+                cmhDecision === "Approve"
+                  ? "bg-green-50 dark:bg-green-950 border border-green-200"
+                  : "bg-red-50 dark:bg-red-950 border border-red-200"
+              }`}
+            >
+              <p
+                className={`text-sm ${
+                  cmhDecision === "Approve"
+                    ? "text-green-700 dark:text-green-300"
+                    : "text-red-700 dark:text-red-300"
+                }`}
+              >
+                {cmhDecision === "Approve"
+                  ? "Order akan disetujui dan melanjutkan proses"
+                  : "Order akan ditolak secara permanen"}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>
+                Catatan {cmhDecision === "Reject" && <span className="text-red-500">*</span>}
+              </Label>
+              <Textarea
+                placeholder={
+                  cmhDecision === "Approve"
+                    ? "Catatan untuk approval (opsional)..."
+                    : "Berikan alasan penolakan..."
+                }
+                value={cmhNote}
+                onChange={(e) => setCmhNote(e.target.value)}
+                rows={4}
+              />
+              <p className="text-xs text-muted-foreground">
+                Catatan akan tersimpan dalam riwayat order
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowCmhNoteDialog(false)
+                setCmhDecision(null)
+                setCmhNote("")
+              }}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={async () => {
+                if (cmhDecision === "Reject" && !cmhNote.trim()) {
+                  toast({
+                    title: "Error",
+                    description: "Alasan penolakan harus diisi",
+                    variant: "destructive",
+                  })
+                  return
+                }
+
+                setProcessingAction(true)
+                try {
+                  if (!selectedOrder) return
+
+                  const noteText =
+                    cmhDecision === "Approve"
+                      ? `Keputusan MH: Approve${cmhNote ? " - " + cmhNote : ""}`
+                      : `Keputusan MH: Reject - ${cmhNote}`
+
+                  const newNotes = [
+                    ...(selectedOrder.notes || []),
+                    {
+                      id: crypto.randomUUID(),
+                      orderId: selectedOrder.id,
+                      userId: user?.id || "",
+                      userName: user?.namaLengkap || "Unknown",
+                      role: user?.role,
+                      note: noteText,
+                      status: cmhDecision,
+                      createdAt: new Date().toISOString(),
+                    },
+                  ]
+
+                  await orderStore.update(selectedOrder.id, {
+                    status: cmhDecision,
+                    notes: newNotes,
+                  })
+
+                  toast({
+                    title: "Berhasil",
+                    description: `Order ${cmhDecision === "Approve" ? "disetujui" : "ditolak"}`,
+                  })
+
+                  setShowCmhNoteDialog(false)
+                  setShowMapInDialog(false)
+                  setCmhDecision(null)
+                  setCmhNote("")
+                  await loadOrders()
+                } catch (error) {
+                  console.error("Error processing CMH decision:", error)
+                  toast({
+                    title: "Error",
+                    description: `Gagal ${cmhDecision === "Approve" ? "menyetujui" : "menolak"} order`,
+                    variant: "destructive",
+                  })
+                } finally {
+                  setProcessingAction(false)
+                }
+              }}
+              disabled={processingAction || (cmhDecision === "Reject" && !cmhNote.trim())}
+              variant={cmhDecision === "Reject" ? "destructive" : "default"}
+            >
+              {processingAction
+                ? "Memproses..."
+                : cmhDecision === "Approve"
+                  ? "Setujui"
+                  : "Tolak"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
