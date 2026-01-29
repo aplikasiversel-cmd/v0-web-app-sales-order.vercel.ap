@@ -148,6 +148,9 @@ export default function TrackingPage() {
   const [showMapInDialog, setShowMapInDialog] = useState(false)
   const [mapInAction, setMapInAction] = useState<"Map In" | "Reject">("Map In")
   const [mapInNote, setMapInNote] = useState("")
+  const [showCmhNoteDialog, setShowCmhNoteDialog] = useState(false)
+  const [cmhDecision, setCmhDecision] = useState<"Approve" | "Reject" | null>(null)
+  const [cmhNote, setCmhNote] = useState("")
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [slikResult, setSlikResult] = useState<string>("")
   const [slikNote, setSlikNote] = useState("")
@@ -790,7 +793,7 @@ export default function TrackingPage() {
         }
         break
       case "Map In":
-        if (isCmo) {
+        if (isCmo || isCmh) {
           return (
             <Button
               size="sm"
@@ -1674,71 +1677,260 @@ export default function TrackingPage() {
       <Dialog open={showMapInDialog} onOpenChange={setShowMapInDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Keputusan Survey</DialogTitle>
-            <DialogDescription>Berikan keputusan untuk order {selectedOrder?.namaNasabah}</DialogDescription>
+            <DialogTitle>{user?.role === "cmh" ? "Keputusan Order" : "Keputusan Survey"}</DialogTitle>
+            <DialogDescription>
+              {user?.role === "cmh" 
+                ? "Berikan keputusan final untuk order " 
+                : "Ajukan order ke CMH untuk "}
+              {selectedOrder?.namaNasabah}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* CMH Dialog - Simplified with just Approve/Reject buttons */}
+          {user?.role === "cmh" ? (
+            <div className="space-y-4">
+              <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 p-3 rounded-lg">
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  Berikan keputusan final: Approve untuk melanjutkan proses atau Reject untuk menolak order.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    setCmhDecision("Approve")
+                    setCmhNote("")
+                    setShowCmhNoteDialog(true)
+                  }}
+                  disabled={processingAction || showCmhNoteDialog}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Approve
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    setCmhDecision("Reject")
+                    setCmhNote("")
+                    setShowCmhNoteDialog(true)
+                  }}
+                  disabled={processingAction || showCmhNoteDialog}
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Reject
+                </Button>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowMapInDialog(false)}>
+                  Batal
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            // CMO Dialog - Original with Map In / Reject dropdown
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Keputusan</Label>
+                <Select value={mapInAction} onValueChange={(v) => setMapInAction(v as "Map In" | "Reject")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Map In">
+                      <div className="flex flex-col">
+                        <span>Map In</span>
+                        <span className="text-xs text-muted-foreground">
+                          Ajukan ke CMH untuk keputusan Approve/Reject
+                        </span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="Reject">
+                      <div className="flex flex-col">
+                        <span>Reject</span>
+                        <span className="text-xs text-muted-foreground">Tolak order (keputusan final)</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Info box based on selection */}
+              <div
+                className={`p-3 rounded-lg ${mapInAction === "Map In" ? "bg-blue-50 dark:bg-blue-950 border border-blue-200" : "bg-red-50 dark:bg-red-950 border border-red-200"}`}
+              >
+                <p
+                  className={`text-sm ${mapInAction === "Map In" ? "text-blue-700 dark:text-blue-300" : "text-red-700 dark:text-red-300"}`}
+                >
+                  {mapInAction === "Map In"
+                    ? "Order akan dikirim ke CMH untuk keputusan final (Approve atau Reject)"
+                    : "Order akan ditolak secara permanen"}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Catatan {mapInAction === "Reject" && <span className="text-red-500">*</span>}</Label>
+                <Textarea
+                  placeholder={
+                    mapInAction === "Map In" ? "Catatan untuk CMH (opsional)..." : "Berikan alasan penolakan..."
+                  }
+                  value={mapInNote}
+                  onChange={(e) => setMapInNote(e.target.value)}
+                />
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowMapInDialog(false)}>
+                  Batal
+                </Button>
+                <Button
+                  onClick={handleMapInSubmit}
+                  disabled={processingAction || (mapInAction === "Reject" && !mapInNote.trim())}
+                  variant={mapInAction === "Reject" ? "destructive" : "default"}
+                >
+                  {processingAction ? "Memproses..." : mapInAction === "Map In" ? "Ajukan ke CMH" : "Reject Order"}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* CMH Note Input Dialog */}
+      <Dialog open={showCmhNoteDialog} onOpenChange={setShowCmhNoteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {cmhDecision === "Approve" ? "Keputusan Approve" : "Keputusan Reject"}
+            </DialogTitle>
+            <DialogDescription>
+              Berikan catatan/alasan untuk keputusan {cmhDecision === "Approve" ? "approve" : "reject"} order{" "}
+              {selectedOrder?.namaNasabah}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Keputusan</Label>
-              <Select value={mapInAction} onValueChange={(v) => setMapInAction(v as "Map In" | "Reject")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Map In">
-                    <div className="flex flex-col">
-                      <span>Map In</span>
-                      <span className="text-xs text-muted-foreground">
-                        Ajukan ke CMH untuk keputusan Approve/Reject
-                      </span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="Reject">
-                    <div className="flex flex-col">
-                      <span>Reject</span>
-                      <span className="text-xs text-muted-foreground">Tolak order (keputusan final)</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Info box based on selection */}
             <div
-              className={`p-3 rounded-lg ${mapInAction === "Map In" ? "bg-blue-50 dark:bg-blue-950 border border-blue-200" : "bg-red-50 dark:bg-red-950 border border-red-200"}`}
+              className={`p-3 rounded-lg ${
+                cmhDecision === "Approve"
+                  ? "bg-green-50 dark:bg-green-950 border border-green-200"
+                  : "bg-red-50 dark:bg-red-950 border border-red-200"
+              }`}
             >
               <p
-                className={`text-sm ${mapInAction === "Map In" ? "text-blue-700 dark:text-blue-300" : "text-red-700 dark:text-red-300"}`}
+                className={`text-sm ${
+                  cmhDecision === "Approve"
+                    ? "text-green-700 dark:text-green-300"
+                    : "text-red-700 dark:text-red-300"
+                }`}
               >
-                {mapInAction === "Map In"
-                  ? "Order akan dikirim ke CMH untuk keputusan final (Approve atau Reject)"
+                {cmhDecision === "Approve"
+                  ? "Order akan disetujui dan melanjutkan proses"
                   : "Order akan ditolak secara permanen"}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label>Catatan {mapInAction === "Reject" && <span className="text-red-500">*</span>}</Label>
+              <Label>
+                Catatan {cmhDecision === "Reject" && <span className="text-red-500">*</span>}
+              </Label>
               <Textarea
                 placeholder={
-                  mapInAction === "Map In" ? "Catatan untuk CMH (opsional)..." : "Berikan alasan penolakan..."
+                  cmhDecision === "Approve"
+                    ? "Catatan untuk approval (opsional)..."
+                    : "Berikan alasan penolakan..."
                 }
-                value={mapInNote}
-                onChange={(e) => setMapInNote(e.target.value)}
+                value={cmhNote}
+                onChange={(e) => setCmhNote(e.target.value)}
+                rows={4}
               />
+              <p className="text-xs text-muted-foreground">
+                Catatan akan tersimpan dalam riwayat order
+              </p>
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMapInDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowCmhNoteDialog(false)
+                setCmhDecision(null)
+                setCmhNote("")
+              }}
+            >
               Batal
             </Button>
             <Button
-              onClick={handleMapInSubmit}
-              disabled={processingAction || (mapInAction === "Reject" && !mapInNote.trim())}
-              variant={mapInAction === "Reject" ? "destructive" : "default"}
+              onClick={async () => {
+                if (cmhDecision === "Reject" && !cmhNote.trim()) {
+                  toast({
+                    title: "Error",
+                    description: "Alasan penolakan harus diisi",
+                    variant: "destructive",
+                  })
+                  return
+                }
+
+                setProcessingAction(true)
+                try {
+                  if (!selectedOrder) return
+
+                  const noteText =
+                    cmhDecision === "Approve"
+                      ? `Keputusan MH: Approve${cmhNote ? " - " + cmhNote : ""}`
+                      : `Keputusan MH: Reject - ${cmhNote}`
+
+                  const newNotes = [
+                    ...(selectedOrder.notes || []),
+                    {
+                      id: crypto.randomUUID(),
+                      orderId: selectedOrder.id,
+                      userId: user?.id || "",
+                      userName: user?.namaLengkap || "Unknown",
+                      role: user?.role,
+                      note: noteText,
+                      status: cmhDecision,
+                      createdAt: new Date().toISOString(),
+                    },
+                  ]
+
+                  await orderStore.update(selectedOrder.id, {
+                    status: cmhDecision,
+                    notes: newNotes,
+                  })
+
+                  toast({
+                    title: "Berhasil",
+                    description: `Order ${cmhDecision === "Approve" ? "disetujui" : "ditolak"}`,
+                  })
+
+                  setShowCmhNoteDialog(false)
+                  setShowMapInDialog(false)
+                  setCmhDecision(null)
+                  setCmhNote("")
+                  await loadOrders()
+                } catch (error) {
+                  console.error("Error processing CMH decision:", error)
+                  toast({
+                    title: "Error",
+                    description: `Gagal ${cmhDecision === "Approve" ? "menyetujui" : "menolak"} order`,
+                    variant: "destructive",
+                  })
+                } finally {
+                  setProcessingAction(false)
+                }
+              }}
+              disabled={processingAction || (cmhDecision === "Reject" && !cmhNote.trim())}
+              variant={cmhDecision === "Reject" ? "destructive" : "default"}
             >
-              {processingAction ? "Memproses..." : mapInAction === "Map In" ? "Ajukan ke CMH" : "Reject Order"}
+              {processingAction
+                ? "Memproses..."
+                : cmhDecision === "Approve"
+                  ? "Setujui"
+                  : "Tolak"}
             </Button>
           </DialogFooter>
         </DialogContent>
