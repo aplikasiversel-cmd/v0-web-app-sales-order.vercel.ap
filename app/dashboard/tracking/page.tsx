@@ -140,6 +140,8 @@ export default function TrackingPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<"nasabah" | "sales" | "cmo" | "status" | "tanggal">("tanggal")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
+  const [selectedMonth, setSelectedMonth] = useState<number | "all">("all")
+  const [selectedYear, setSelectedYear] = useState<number | "all">("all")
 
   const [showDetailDialog, setShowDetailDialog] = useState(false)
   const [showSlikDialog, setShowSlikDialog] = useState(false)
@@ -298,7 +300,22 @@ export default function TrackingPage() {
         order.salesName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         order.typeUnit.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesStatus = statusFilter === "all" || order.status === statusFilter
-      return matchesSearch && matchesStatus
+      
+      // Filter berdasarkan bulan
+      let matchesMonth = true
+      if (selectedMonth !== "all") {
+        const orderDate = new Date(order.createdAt)
+        matchesMonth = orderDate.getMonth() === selectedMonth
+      }
+      
+      // Filter berdasarkan tahun
+      let matchesYear = true
+      if (selectedYear !== "all") {
+        const orderDate = new Date(order.createdAt)
+        matchesYear = orderDate.getFullYear() === selectedYear
+      }
+      
+      return matchesSearch && matchesStatus && matchesMonth && matchesYear
     })
 
     // Apply sorting
@@ -341,7 +358,7 @@ export default function TrackingPage() {
     })
 
     return result
-  }, [orders, searchQuery, statusFilter, sortBy, sortOrder])
+  }, [orders, searchQuery, statusFilter, sortBy, sortOrder, selectedMonth, selectedYear])
 
   const totalPages = Math.ceil(filteredOrders.length / ITEMS_PER_PAGE)
   const paginatedOrders = useMemo(() => {
@@ -910,7 +927,7 @@ export default function TrackingPage() {
 
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex flex-col gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -920,10 +937,10 @@ export default function TrackingPage() {
                 className="pl-10"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col md:flex-row gap-2 md:gap-4 md:items-center">
               <Filter className="h-4 w-4 text-muted-foreground" />
               <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as OrderStatus | "all")}>
-                <SelectTrigger className="w-40">
+                <SelectTrigger className="w-full md:w-40">
                   <SelectValue placeholder="Semua Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -933,6 +950,34 @@ export default function TrackingPage() {
                       {status}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedMonth.toString()} onValueChange={(value) => setSelectedMonth(value === "all" ? "all" : parseInt(value))}>
+                <SelectTrigger className="w-full md:w-40">
+                  <SelectValue placeholder="Semua Bulan" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Bulan</SelectItem>
+                  {["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"].map((month, index) => (
+                    <SelectItem key={month} value={index.toString()}>
+                      {month}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(value === "all" ? "all" : parseInt(value))}>
+                <SelectTrigger className="w-full md:w-40">
+                  <SelectValue placeholder="Semua Tahun" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Tahun</SelectItem>
+                  {Array.from(new Set(orders.map((o) => new Date(o.createdAt).getFullYear())))
+                    .sort((a, b) => b - a)
+                    .map((year) => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>

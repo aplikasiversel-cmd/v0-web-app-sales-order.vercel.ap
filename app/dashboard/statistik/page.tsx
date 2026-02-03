@@ -22,6 +22,8 @@ import {
   Line,
 } from "recharts"
 import { Loader2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const COLORS = ["#0ea5e9", "#f59e0b", "#f97316", "#06b6d4", "#8b5cf6", "#14b8a6", "#22c55e", "#ef4444"]
 
@@ -33,6 +35,8 @@ export default function StatistikPage() {
   const [dealerList, setDealerList] = useState<Dealer[]>([])
   const [loading, setLoading] = useState(true)
   const [salesIdsUnderSPV, setSalesIdsUnderSPV] = useState<string[]>([])
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth())
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
 
   const loadData = useCallback(async () => {
     if (user) {
@@ -128,6 +132,22 @@ export default function StatistikPage() {
     loadData()
   }, [loadData])
 
+  // Filter orders berdasarkan bulan dan tahun yang dipilih
+  const filteredOrders = orders.filter((order) => {
+    const orderDate = new Date(order.createdAt)
+    return orderDate.getMonth() === selectedMonth && orderDate.getFullYear() === selectedYear
+  })
+
+  // Dapatkan tahun-tahun unik dari orders
+  const availableYears = Array.from(
+    new Set(
+      orders.map((order) => {
+        const date = new Date(order.createdAt)
+        return date.getFullYear()
+      }),
+    ),
+  ).sort((a, b) => b - a)
+
   if (!user) return null
 
   if (loading) {
@@ -145,7 +165,7 @@ export default function StatistikPage() {
     ["Baru", "Claim", "Cek Slik", "Proses", "Pertimbangkan", "Map In", "Approve", "Reject"] as OrderStatus[]
   ).map((status) => ({
     name: status,
-    value: orders.filter((o) => o.status === status).length,
+    value: filteredOrders.filter((o) => o.status === status).length,
   }))
 
   const monthlyData = Array.from({ length: 6 }, (_, i) => {
@@ -153,7 +173,7 @@ export default function StatistikPage() {
     date.setMonth(date.getMonth() - (5 - i))
     const month = date.toLocaleString("id-ID", { month: "short" })
     const year = date.getFullYear()
-    const monthOrders = orders.filter((o) => {
+    const monthOrders = filteredOrders.filter((o) => {
       const orderDate = new Date(o.createdAt)
       return orderDate.getMonth() === date.getMonth() && orderDate.getFullYear() === date.getFullYear()
     })
@@ -173,7 +193,7 @@ export default function StatistikPage() {
         data: salesList
           .map((sales) => ({
             name: sales.namaLengkap,
-            value: orders.filter((o) => o.salesId === sales.id).length,
+            value: filteredOrders.filter((o) => o.salesId === sales.id).length,
           }))
           .filter((d) => d.value > 0)
           .sort((a, b) => b.value - a.value)
@@ -181,7 +201,7 @@ export default function StatistikPage() {
       }
     } else if (user.role === "cmh" || user.role === "admin") {
       const dealerCounts: Record<string, number> = {}
-      orders.forEach((order) => {
+      filteredOrders.forEach((order) => {
         if (order.dealer) {
           dealerCounts[order.dealer] = (dealerCounts[order.dealer] || 0) + 1
         }
@@ -197,7 +217,7 @@ export default function StatistikPage() {
       }
     } else if (user.role === "spv") {
       const cmoCounts: Record<string, number> = {}
-      orders.forEach((order) => {
+      filteredOrders.forEach((order) => {
         if (order.cmoName) {
           cmoCounts[order.cmoName] = (cmoCounts[order.cmoName] || 0) + 1
         }
@@ -214,7 +234,7 @@ export default function StatistikPage() {
       }
     } else {
       const cmoCounts: Record<string, number> = {}
-      orders.forEach((order) => {
+      filteredOrders.forEach((order) => {
         if (order.cmoName) {
           cmoCounts[order.cmoName] = (cmoCounts[order.cmoName] || 0) + 1
         }
@@ -234,14 +254,68 @@ export default function StatistikPage() {
 
   const topChartConfig = getTopChartData()
 
-  const hasData = orders.length > 0
+  const hasData = filteredOrders.length > 0
   const hasStatusData = statusData.some((d) => d.value > 0)
+
+  const monthNames = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+  ]
 
   return (
     <div className="flex flex-col min-h-screen">
       <DashboardHeader title="Statistik" description="Laporan dan metrik kinerja order" />
 
       <div className="flex-1 p-4 lg:p-6 space-y-6">
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">Bulan</label>
+            <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(parseInt(v))}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {monthNames.map((month, index) => (
+                  <SelectItem key={month} value={index.toString()}>
+                    {month}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">Tahun</label>
+            <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {availableYears.length > 0 ? (
+                  availableYears.map((year) => (
+                    <SelectItem key={year} value={year.toString()}>
+                      {year}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value={selectedYear.toString()} disabled>
+                    {selectedYear}
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSelectedMonth(new Date().getMonth())
+              setSelectedYear(new Date().getFullYear())
+            }}
+          >
+            Reset
+          </Button>
+        </div>
         {!hasData && (
           <Card>
             <CardContent className="p-8 text-center text-muted-foreground">
@@ -357,15 +431,15 @@ export default function StatistikPage() {
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Total Order</p>
-              <p className="text-3xl font-bold">{orders.length}</p>
+              <p className="text-3xl font-bold">{filteredOrders.length}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Approval Rate</p>
               <p className="text-3xl font-bold text-green-600">
-                {orders.length > 0
-                  ? ((orders.filter((o) => o.status === "Approve").length / orders.length) * 100).toFixed(1)
+                {filteredOrders.length > 0
+                  ? ((filteredOrders.filter((o) => o.status === "Approve").length / filteredOrders.length) * 100).toFixed(1)
                   : 0}
                 %
               </p>
@@ -375,8 +449,8 @@ export default function StatistikPage() {
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Reject Rate</p>
               <p className="text-3xl font-bold text-red-600">
-                {orders.length > 0
-                  ? ((orders.filter((o) => o.status === "Reject").length / orders.length) * 100).toFixed(1)
+                {filteredOrders.length > 0
+                  ? ((filteredOrders.filter((o) => o.status === "Reject").length / filteredOrders.length) * 100).toFixed(1)
                   : 0}
                 %
               </p>
@@ -386,7 +460,7 @@ export default function StatistikPage() {
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Pending</p>
               <p className="text-3xl font-bold text-amber-600">
-                {orders.filter((o) => !["Approve", "Reject"].includes(o.status)).length}
+                {filteredOrders.filter((o) => !["Approve", "Reject"].includes(o.status)).length}
               </p>
             </CardContent>
           </Card>
