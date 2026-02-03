@@ -431,15 +431,15 @@ export default function StatistikPage() {
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Total Order</p>
-              <p className="text-3xl font-bold">{orders.length}</p>
+              <p className="text-3xl font-bold">{filteredOrders.length}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Approval Rate</p>
               <p className="text-3xl font-bold text-green-600">
-                {orders.length > 0
-                  ? ((orders.filter((o) => o.status === "Approve").length / orders.length) * 100).toFixed(1)
+                {filteredOrders.length > 0
+                  ? ((filteredOrders.filter((o) => o.status === "Approve").length / filteredOrders.length) * 100).toFixed(1)
                   : 0}
                 %
               </p>
@@ -449,8 +449,8 @@ export default function StatistikPage() {
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Reject Rate</p>
               <p className="text-3xl font-bold text-red-600">
-                {orders.length > 0
-                  ? ((orders.filter((o) => o.status === "Reject").length / orders.length) * 100).toFixed(1)
+                {filteredOrders.length > 0
+                  ? ((filteredOrders.filter((o) => o.status === "Reject").length / filteredOrders.length) * 100).toFixed(1)
                   : 0}
                 %
               </p>
@@ -460,7 +460,7 @@ export default function StatistikPage() {
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Pending</p>
               <p className="text-3xl font-bold text-amber-600">
-                {orders.filter((o) => !["Approve", "Reject"].includes(o.status)).length}
+                {filteredOrders.filter((o) => !["Approve", "Reject"].includes(o.status)).length}
               </p>
             </CardContent>
           </Card>
