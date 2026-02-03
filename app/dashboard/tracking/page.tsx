@@ -47,6 +47,8 @@ import {
   ExternalLink,
   Download,
   XCircle,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react"
 
 function base64ToBlob(base64: string): Blob {
@@ -136,6 +138,8 @@ export default function TrackingPage() {
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [sortBy, setSortBy] = useState<"nasabah" | "sales" | "cmo" | "status" | "tanggal">("tanggal")
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
 
   const [showDetailDialog, setShowDetailDialog] = useState(false)
   const [showSlikDialog, setShowSlikDialog] = useState(false)
@@ -288,7 +292,7 @@ export default function TrackingPage() {
   }, [user, loadOrders])
 
   const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
+    let result = orders.filter((order) => {
       const matchesSearch =
         order.namaNasabah.toLowerCase().includes(searchQuery.toLowerCase()) ||
         order.salesName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -296,7 +300,48 @@ export default function TrackingPage() {
       const matchesStatus = statusFilter === "all" || order.status === statusFilter
       return matchesSearch && matchesStatus
     })
-  }, [orders, searchQuery, statusFilter])
+
+    // Apply sorting
+    result.sort((a, b) => {
+      let compareA: string | number
+      let compareB: string | number
+
+      switch (sortBy) {
+        case "nasabah":
+          compareA = a.namaNasabah.toLowerCase()
+          compareB = b.namaNasabah.toLowerCase()
+          break
+        case "sales":
+          compareA = a.salesName.toLowerCase()
+          compareB = b.salesName.toLowerCase()
+          break
+        case "cmo":
+          compareA = (a.cmoName || "").toLowerCase()
+          compareB = (b.cmoName || "").toLowerCase()
+          break
+        case "status":
+          compareA = a.status
+          compareB = b.status
+          break
+        case "tanggal":
+          compareA = new Date(a.createdAt).getTime()
+          compareB = new Date(b.createdAt).getTime()
+          break
+        default:
+          return 0
+      }
+
+      if (compareA < compareB) {
+        return sortOrder === "asc" ? -1 : 1
+      }
+      if (compareA > compareB) {
+        return sortOrder === "asc" ? 1 : -1
+      }
+      return 0
+    })
+
+    return result
+  }, [orders, searchQuery, statusFilter, sortBy, sortOrder])
 
   const totalPages = Math.ceil(filteredOrders.length / ITEMS_PER_PAGE)
   const paginatedOrders = useMemo(() => {
@@ -915,11 +960,96 @@ export default function TrackingPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
-                      <th className="text-left p-2">Nasabah</th>
-                      <th className="text-left p-2">Sales</th>
-                      <th className="text-left p-2">CMO</th>
-                      <th className="text-left p-2">Status</th>
-                      <th className="text-left p-2">Tanggal</th>
+                      <th className="text-left p-2">
+                        <button
+                          onClick={() => {
+                            if (sortBy === "nasabah") {
+                              setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+                            } else {
+                              setSortBy("nasabah")
+                              setSortOrder("asc")
+                            }
+                          }}
+                          className="flex items-center gap-1 hover:text-primary font-medium"
+                        >
+                          Nasabah
+                          {sortBy === "nasabah" && (
+                            sortOrder === "asc" ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="text-left p-2">
+                        <button
+                          onClick={() => {
+                            if (sortBy === "sales") {
+                              setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+                            } else {
+                              setSortBy("sales")
+                              setSortOrder("asc")
+                            }
+                          }}
+                          className="flex items-center gap-1 hover:text-primary font-medium"
+                        >
+                          Sales
+                          {sortBy === "sales" && (
+                            sortOrder === "asc" ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="text-left p-2">
+                        <button
+                          onClick={() => {
+                            if (sortBy === "cmo") {
+                              setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+                            } else {
+                              setSortBy("cmo")
+                              setSortOrder("asc")
+                            }
+                          }}
+                          className="flex items-center gap-1 hover:text-primary font-medium"
+                        >
+                          CMO
+                          {sortBy === "cmo" && (
+                            sortOrder === "asc" ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="text-left p-2">
+                        <button
+                          onClick={() => {
+                            if (sortBy === "status") {
+                              setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+                            } else {
+                              setSortBy("status")
+                              setSortOrder("asc")
+                            }
+                          }}
+                          className="flex items-center gap-1 hover:text-primary font-medium"
+                        >
+                          Status
+                          {sortBy === "status" && (
+                            sortOrder === "asc" ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="text-left p-2">
+                        <button
+                          onClick={() => {
+                            if (sortBy === "tanggal") {
+                              setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+                            } else {
+                              setSortBy("tanggal")
+                              setSortOrder("desc")
+                            }
+                          }}
+                          className="flex items-center gap-1 hover:text-primary font-medium"
+                        >
+                          Tanggal
+                          {sortBy === "tanggal" && (
+                            sortOrder === "asc" ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                          )}
+                        </button>
+                      </th>
                       <th className="text-left p-2">Aksi</th>
                     </tr>
                   </thead>
