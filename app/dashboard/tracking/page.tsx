@@ -1064,7 +1064,14 @@ export default function TrackingPage() {
                             </p>
                           </div>
                         </td>
-                        <td className="p-2">{order.salesName}</td>
+                        <td className="p-2">
+                          <div>
+                            <p className="font-medium">{order.salesName}</p>
+                            <p className="text-sm text-muted-foreground">
+                              Dealer {order.dealer}
+                            </p>
+                          </div>
+                        </td>
                         <td className="p-2">{order.cmoName || "-"}</td>
                         <td className="p-2">
                           <Badge className={STATUS_COLORS[order.status]}>{order.status}</Badge>
@@ -1099,6 +1106,7 @@ export default function TrackingPage() {
                       </div>
                       <div className="text-sm text-muted-foreground mb-3">
                         <p>Sales: {order.salesName}</p>
+                        <p>Dealer: {order.dealer}</p>
                         <p>CMO: {order.cmoName || "-"}</p>
                         <p className="flex items-center gap-1">
                           <CalendarIcon className="h-3 w-3" />
