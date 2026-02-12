@@ -42,7 +42,7 @@ export interface Program {
   namaProgram: string
   jenisPembiayaan: JenisPembiayaan
   merk: string
-  dealer?: string
+  dealers?: string[]
   tdpPersen: number
   tenorBunga: {
     tenor: number
@@ -175,12 +175,3 @@ export const DEALER_BY_MERK: Record<string, string[]> = {
 export const MERK_LIST = Object.keys(DEALER_BY_MERK)
 
 export const JENIS_PEMBIAYAAN: JenisPembiayaan[] = ["Passenger", "Pick Up", "Pass Comm", "Truck", "EV (Listrik)"]
-
-export interface Dealer {
-  id: string
-  namaDealer: string
-  merk: string
-  isActive: boolean
-  createdAt?: string
-  updatedAt?: string
-}

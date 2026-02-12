@@ -59,7 +59,7 @@ export default function AdminProgramPage() {
     namaProgram: "",
     jenisPembiayaan: "" as JenisPembiayaan | "",
     merk: "",
-    dealer: "",
+    dealers: [] as string[],
     tdpPersen: "20",
     tenorBunga: DEFAULT_TENORS.map((tenor) => ({
       tenor,
@@ -146,7 +146,7 @@ export default function AdminProgramPage() {
       namaProgram: "",
       jenisPembiayaan: "",
       merk: "",
-      dealer: "",
+      dealers: [],
       tdpPersen: "20",
       tenorBunga: DEFAULT_TENORS.map((tenor) => ({
         tenor,
@@ -199,7 +199,7 @@ export default function AdminProgramPage() {
       namaProgram: program.namaProgram || "",
       jenisPembiayaan: (program.jenisPembiayaan as JenisPembiayaan) || "",
       merk: program.merk || "",
-      dealer: program.dealer || "",
+      dealers: program.dealers || [],
       tdpPersen: program.tdpPersen?.toString() || "20",
       tenorBunga: mergedTenors,
       isActive: program.isActive,
@@ -221,7 +221,7 @@ export default function AdminProgramPage() {
       namaProgram: formData.namaProgram.toUpperCase(),
       jenisPembiayaan: formData.jenisPembiayaan as JenisPembiayaan,
       merk: formData.merk,
-      dealer: formData.dealer || undefined,
+      dealers: formData.dealers.length > 0 ? formData.dealers : undefined,
       tdpPersen: Number.parseFloat(formData.tdpPersen) || 0,
       tenorBunga: activeTenors,
       isActive: formData.isActive,
@@ -263,7 +263,7 @@ export default function AdminProgramPage() {
       namaProgram: formData.namaProgram.toUpperCase(),
       jenisPembiayaan: formData.jenisPembiayaan as JenisPembiayaan,
       merk: formData.merk,
-      dealer: formData.dealer || undefined,
+      dealers: formData.dealers.length > 0 ? formData.dealers : undefined,
       tdpPersen: Number.parseFloat(formData.tdpPersen) || 0,
       tenorBunga: activeTenors,
       isActive: formData.isActive,
@@ -494,22 +494,65 @@ export default function AdminProgramPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Nama Dealer</Label>
-              <Select value={formData.dealer || "all"} onValueChange={(v) => setFormData((prev) => ({ ...prev, dealer: v === "all" ? "" : v }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih Dealer (Opsional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Dealer</SelectItem>
-                  {filteredDealers.map((dealer) => (
-                    <SelectItem key={dealer.id} value={dealer.namaDealer}>
-                      {dealer.namaDealer}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {formData.merk && filteredDealers.length === 0 && (
+              <Label>Nama Dealer (Pilih satu atau lebih)</Label>
+              {formData.merk && filteredDealers.length === 0 ? (
                 <p className="text-xs text-muted-foreground">Tidak ada dealer untuk merk ini</p>
+              ) : (
+                <div className="border rounded-md p-3 space-y-3 max-h-48 overflow-y-auto">
+                  {filteredDealers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Pilih merk terlebih dahulu</p>
+                  ) : (
+                    <>
+                      <div className="flex items-center space-x-2 pb-2 border-b">
+                        <Checkbox
+                          id="select-all-dealers"
+                          checked={formData.dealers.length === filteredDealers.length && filteredDealers.length > 0}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setFormData((prev) => ({
+                                ...prev,
+                                dealers: filteredDealers.map((d) => d.namaDealer),
+                              }))
+                            } else {
+                              setFormData((prev) => ({ ...prev, dealers: [] }))
+                            }
+                          }}
+                        />
+                        <label htmlFor="select-all-dealers" className="text-sm font-medium cursor-pointer">
+                          Semua Dealer
+                        </label>
+                      </div>
+                      {filteredDealers.map((dealer) => (
+                        <div key={dealer.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={dealer.id}
+                            checked={formData.dealers.includes(dealer.namaDealer)}
+                            onCheckedChange={(checked) => {
+                              setFormData((prev) => ({
+                                ...prev,
+                                dealers: checked
+                                  ? [...prev.dealers, dealer.namaDealer]
+                                  : prev.dealers.filter((d) => d !== dealer.namaDealer),
+                              }))
+                            }}
+                          />
+                          <label htmlFor={dealer.id} className="text-sm cursor-pointer">
+                            {dealer.namaDealer}
+                          </label>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+              {formData.dealers.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {formData.dealers.map((dealer) => (
+                    <span key={dealer} className="text-xs bg-primary/20 text-primary px-2 py-1 rounded">
+                      {dealer}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
 
