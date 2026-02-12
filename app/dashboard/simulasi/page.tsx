@@ -78,9 +78,11 @@ export default function SimulasiPage() {
       (p) =>
         p.merk?.trim().toLowerCase() === merkLower &&
         p.jenisPembiayaan?.trim().toLowerCase() === jenisLower &&
-        p.isActive,
+        p.isActive &&
+        // Filter by dealer: show program if no dealers specified OR selected dealer is in the list
+        (!p.dealers || p.dealers.length === 0 || (formData.dealer && p.dealers.includes(formData.dealer))),
     )
-  }, [formData.merk, formData.jenisPembiayaan, programs])
+  }, [formData.merk, formData.jenisPembiayaan, formData.dealer, programs])
 
   const uniqueCmoList = useMemo(() => {
     const seen = new Set<string>()
