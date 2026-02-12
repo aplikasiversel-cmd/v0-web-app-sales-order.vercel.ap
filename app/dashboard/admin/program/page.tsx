@@ -33,8 +33,8 @@ import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useAuth } from "@/lib/auth-context"
-import { programStore } from "@/lib/data-store"
-import type { Program, JenisPembiayaan } from "@/lib/types"
+import { programStore, dealerStore } from "@/lib/data-store"
+import type { Program, JenisPembiayaan, Dealer } from "@/lib/types"
 import { JENIS_PEMBIAYAAN } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { getMerks } from "@/app/actions/db-actions"
@@ -52,11 +52,14 @@ export default function AdminProgramPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [selectedProgram, setSelectedProgram] = useState<Program | null>(null)
   const [allMerks, setAllMerks] = useState<string[]>([])
+  const [allDealers, setAllDealers] = useState<Dealer[]>([])
+  const [filteredDealers, setFilteredDealers] = useState<Dealer[]>([])
 
   const [formData, setFormData] = useState({
     namaProgram: "",
     jenisPembiayaan: "" as JenisPembiayaan | "",
     merk: "",
+    dealer: "",
     tdpPersen: "20",
     tenorBunga: DEFAULT_TENORS.map((tenor) => ({
       tenor,
@@ -69,6 +72,7 @@ export default function AdminProgramPage() {
   useEffect(() => {
     loadPrograms()
     loadMerks()
+    loadDealers()
   }, [])
 
   const loadMerks = async () => {
@@ -80,11 +84,35 @@ export default function AdminProgramPage() {
     }
   }
 
+  const loadDealers = async () => {
+    try {
+      const dealersFromDb = await dealerStore.getAll()
+      setAllDealers(dealersFromDb)
+    } catch (error) {
+      console.error("Error loading dealers:", error)
+    }
+  }
+
   useEffect(() => {
     if (showAddDialog || showEditDialog) {
       loadMerks()
+      loadDealers()
     }
   }, [showAddDialog, showEditDialog])
+
+  // Filter dealers when merk changes
+  useEffect(() => {
+    if (formData.merk && allDealers.length > 0) {
+      const filtered = allDealers.filter((d) => d.merk === formData.merk)
+      setFilteredDealers(filtered)
+      // Reset dealer if current selection doesn't match new merk
+      if (formData.dealer && !filtered.find((d) => d.namaDealer === formData.dealer)) {
+        setFormData((prev) => ({ ...prev, dealer: "" }))
+      }
+    } else {
+      setFilteredDealers([])
+    }
+  }, [formData.merk, allDealers])
 
   const loadPrograms = async () => {
     try {
@@ -112,6 +140,7 @@ export default function AdminProgramPage() {
       namaProgram: "",
       jenisPembiayaan: "",
       merk: "",
+      dealer: "",
       tdpPersen: "20",
       tenorBunga: DEFAULT_TENORS.map((tenor) => ({
         tenor,
@@ -120,6 +149,7 @@ export default function AdminProgramPage() {
       })),
       isActive: true,
     })
+    setFilteredDealers([])
     setShowAddDialog(true)
   }
 
@@ -150,6 +180,12 @@ export default function AdminProgramPage() {
       }
     }
 
+    // Filter dealers for the current merk
+    if (program.merk && allDealers.length > 0) {
+      const filtered = allDealers.filter((d) => d.merk === program.merk)
+      setFilteredDealers(filtered)
+    }
+
     // Convert to array and sort by tenor ascending
     const mergedTenors = Array.from(existingTenorMap.values()).sort((a, b) => a.tenor - b.tenor)
 
@@ -157,6 +193,7 @@ export default function AdminProgramPage() {
       namaProgram: program.namaProgram || "",
       jenisPembiayaan: (program.jenisPembiayaan as JenisPembiayaan) || "",
       merk: program.merk || "",
+      dealer: program.dealer || "",
       tdpPersen: program.tdpPersen?.toString() || "20",
       tenorBunga: mergedTenors,
       isActive: program.isActive,
@@ -178,6 +215,7 @@ export default function AdminProgramPage() {
       namaProgram: formData.namaProgram.toUpperCase(),
       jenisPembiayaan: formData.jenisPembiayaan as JenisPembiayaan,
       merk: formData.merk,
+      dealer: formData.dealer || undefined,
       tdpPersen: Number.parseFloat(formData.tdpPersen) || 0,
       tenorBunga: activeTenors,
       isActive: formData.isActive,
@@ -219,6 +257,7 @@ export default function AdminProgramPage() {
       namaProgram: formData.namaProgram.toUpperCase(),
       jenisPembiayaan: formData.jenisPembiayaan as JenisPembiayaan,
       merk: formData.merk,
+      dealer: formData.dealer || undefined,
       tdpPersen: Number.parseFloat(formData.tdpPersen) || 0,
       tenorBunga: activeTenors,
       isActive: formData.isActive,
@@ -446,6 +485,26 @@ export default function AdminProgramPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Nama Dealer</Label>
+              <Select value={formData.dealer} onValueChange={(v) => setFormData((prev) => ({ ...prev, dealer: v }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih Dealer (Opsional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Semua Dealer</SelectItem>
+                  {filteredDealers.map((dealer) => (
+                    <SelectItem key={dealer.id} value={dealer.namaDealer}>
+                      {dealer.namaDealer}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {formData.merk && filteredDealers.length === 0 && (
+                <p className="text-xs text-muted-foreground">Tidak ada dealer untuk merk ini</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

@@ -42,6 +42,7 @@ export interface Program {
   namaProgram: string
   jenisPembiayaan: JenisPembiayaan
   merk: string
+  dealer?: string
   tdpPersen: number
   tenorBunga: {
     tenor: number
