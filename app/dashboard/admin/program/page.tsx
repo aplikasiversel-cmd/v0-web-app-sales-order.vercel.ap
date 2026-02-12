@@ -87,7 +87,13 @@ export default function AdminProgramPage() {
   const loadDealers = async () => {
     try {
       const dealersFromDb = await dealerStore.getAll()
-      setAllDealers(dealersFromDb)
+      const mappedDealers = (dealersFromDb || []).map((d: any) => ({
+        id: d.id || "",
+        namaDealer: d.namaDealer || d.nama_dealer || d.nama || "",
+        merk: d.merk || "",
+        isActive: d.isActive !== false,
+      }))
+      setAllDealers(mappedDealers)
     } catch (error) {
       console.error("Error loading dealers:", error)
     }

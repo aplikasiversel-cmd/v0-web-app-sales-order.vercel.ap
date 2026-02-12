@@ -175,3 +175,12 @@ export const DEALER_BY_MERK: Record<string, string[]> = {
 export const MERK_LIST = Object.keys(DEALER_BY_MERK)
 
 export const JENIS_PEMBIAYAAN: JenisPembiayaan[] = ["Passenger", "Pick Up", "Pass Comm", "Truck", "EV (Listrik)"]
+
+export interface Dealer {
+  id: string
+  namaDealer: string
+  merk: string
+  isActive: boolean
+  createdAt?: string
+  updatedAt?: string
+}
