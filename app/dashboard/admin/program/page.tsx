@@ -489,12 +489,12 @@ export default function AdminProgramPage() {
 
             <div className="space-y-2">
               <Label>Nama Dealer</Label>
-              <Select value={formData.dealer} onValueChange={(v) => setFormData((prev) => ({ ...prev, dealer: v }))}>
+              <Select value={formData.dealer || "all"} onValueChange={(v) => setFormData((prev) => ({ ...prev, dealer: v === "all" ? "" : v }))}>
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih Dealer (Opsional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Semua Dealer</SelectItem>
+                  <SelectItem value="all">Semua Dealer</SelectItem>
                   {filteredDealers.map((dealer) => (
                     <SelectItem key={dealer.id} value={dealer.namaDealer}>
                       {dealer.namaDealer}
