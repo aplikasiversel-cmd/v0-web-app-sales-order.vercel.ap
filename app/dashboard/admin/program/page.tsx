@@ -33,8 +33,8 @@ import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useAuth } from "@/lib/auth-context"
-import { programStore } from "@/lib/data-store"
-import type { Program, JenisPembiayaan } from "@/lib/types"
+import { programStore, dealerStore } from "@/lib/data-store"
+import type { Program, JenisPembiayaan, Dealer } from "@/lib/types"
 import { JENIS_PEMBIAYAAN } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { getMerks } from "@/app/actions/db-actions"
@@ -52,11 +52,14 @@ export default function AdminProgramPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [selectedProgram, setSelectedProgram] = useState<Program | null>(null)
   const [allMerks, setAllMerks] = useState<string[]>([])
+  const [allDealers, setAllDealers] = useState<Dealer[]>([])
+  const [filteredDealers, setFilteredDealers] = useState<Dealer[]>([])
 
   const [formData, setFormData] = useState({
     namaProgram: "",
     jenisPembiayaan: "" as JenisPembiayaan | "",
     merk: "",
+    dealers: [] as string[],
     tdpPersen: "20",
     tenorBunga: DEFAULT_TENORS.map((tenor) => ({
       tenor,
@@ -69,6 +72,7 @@ export default function AdminProgramPage() {
   useEffect(() => {
     loadPrograms()
     loadMerks()
+    loadDealers()
   }, [])
 
   const loadMerks = async () => {
@@ -80,11 +84,41 @@ export default function AdminProgramPage() {
     }
   }
 
+  const loadDealers = async () => {
+    try {
+      const dealersFromDb = await dealerStore.getAll()
+      const mappedDealers = (dealersFromDb || []).map((d: any) => ({
+        id: d.id || "",
+        namaDealer: d.namaDealer || d.nama_dealer || d.nama || "",
+        merk: d.merk || "",
+        isActive: d.isActive !== false,
+      }))
+      setAllDealers(mappedDealers)
+    } catch (error) {
+      console.error("Error loading dealers:", error)
+    }
+  }
+
   useEffect(() => {
     if (showAddDialog || showEditDialog) {
       loadMerks()
+      loadDealers()
     }
   }, [showAddDialog, showEditDialog])
+
+  // Filter dealers when merk changes
+  useEffect(() => {
+    if (formData.merk && allDealers.length > 0) {
+      const filtered = allDealers.filter((d) => d.merk === formData.merk)
+      setFilteredDealers(filtered)
+      // Reset dealer if current selection doesn't match new merk
+      if (formData.dealer && !filtered.find((d) => d.namaDealer === formData.dealer)) {
+        setFormData((prev) => ({ ...prev, dealer: "" }))
+      }
+    } else {
+      setFilteredDealers([])
+    }
+  }, [formData.merk, allDealers])
 
   const loadPrograms = async () => {
     try {
@@ -112,6 +146,7 @@ export default function AdminProgramPage() {
       namaProgram: "",
       jenisPembiayaan: "",
       merk: "",
+      dealers: [],
       tdpPersen: "20",
       tenorBunga: DEFAULT_TENORS.map((tenor) => ({
         tenor,
@@ -120,6 +155,7 @@ export default function AdminProgramPage() {
       })),
       isActive: true,
     })
+    setFilteredDealers([])
     setShowAddDialog(true)
   }
 
@@ -150,6 +186,12 @@ export default function AdminProgramPage() {
       }
     }
 
+    // Filter dealers for the current merk
+    if (program.merk && allDealers.length > 0) {
+      const filtered = allDealers.filter((d) => d.merk === program.merk)
+      setFilteredDealers(filtered)
+    }
+
     // Convert to array and sort by tenor ascending
     const mergedTenors = Array.from(existingTenorMap.values()).sort((a, b) => a.tenor - b.tenor)
 
@@ -157,6 +199,7 @@ export default function AdminProgramPage() {
       namaProgram: program.namaProgram || "",
       jenisPembiayaan: (program.jenisPembiayaan as JenisPembiayaan) || "",
       merk: program.merk || "",
+      dealers: program.dealers || [],
       tdpPersen: program.tdpPersen?.toString() || "20",
       tenorBunga: mergedTenors,
       isActive: program.isActive,
@@ -178,6 +221,7 @@ export default function AdminProgramPage() {
       namaProgram: formData.namaProgram.toUpperCase(),
       jenisPembiayaan: formData.jenisPembiayaan as JenisPembiayaan,
       merk: formData.merk,
+      dealers: formData.dealers.length > 0 ? formData.dealers : undefined,
       tdpPersen: Number.parseFloat(formData.tdpPersen) || 0,
       tenorBunga: activeTenors,
       isActive: formData.isActive,
@@ -219,6 +263,7 @@ export default function AdminProgramPage() {
       namaProgram: formData.namaProgram.toUpperCase(),
       jenisPembiayaan: formData.jenisPembiayaan as JenisPembiayaan,
       merk: formData.merk,
+      dealers: formData.dealers.length > 0 ? formData.dealers : undefined,
       tdpPersen: Number.parseFloat(formData.tdpPersen) || 0,
       tenorBunga: activeTenors,
       isActive: formData.isActive,
@@ -446,6 +491,69 @@ export default function AdminProgramPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Nama Dealer (Pilih satu atau lebih)</Label>
+              {formData.merk && filteredDealers.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Tidak ada dealer untuk merk ini</p>
+              ) : (
+                <div className="border rounded-md p-3 space-y-3 max-h-48 overflow-y-auto">
+                  {filteredDealers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Pilih merk terlebih dahulu</p>
+                  ) : (
+                    <>
+                      <div className="flex items-center space-x-2 pb-2 border-b">
+                        <Checkbox
+                          id="select-all-dealers"
+                          checked={formData.dealers.length === filteredDealers.length && filteredDealers.length > 0}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setFormData((prev) => ({
+                                ...prev,
+                                dealers: filteredDealers.map((d) => d.namaDealer),
+                              }))
+                            } else {
+                              setFormData((prev) => ({ ...prev, dealers: [] }))
+                            }
+                          }}
+                        />
+                        <label htmlFor="select-all-dealers" className="text-sm font-medium cursor-pointer">
+                          Semua Dealer
+                        </label>
+                      </div>
+                      {filteredDealers.map((dealer) => (
+                        <div key={dealer.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={dealer.id}
+                            checked={formData.dealers.includes(dealer.namaDealer)}
+                            onCheckedChange={(checked) => {
+                              setFormData((prev) => ({
+                                ...prev,
+                                dealers: checked
+                                  ? [...prev.dealers, dealer.namaDealer]
+                                  : prev.dealers.filter((d) => d !== dealer.namaDealer),
+                              }))
+                            }}
+                          />
+                          <label htmlFor={dealer.id} className="text-sm cursor-pointer">
+                            {dealer.namaDealer}
+                          </label>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+              {formData.dealers.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {formData.dealers.map((dealer) => (
+                    <span key={dealer} className="text-xs bg-primary/20 text-primary px-2 py-1 rounded">
+                      {dealer}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

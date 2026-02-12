@@ -1,4 +1,5 @@
 import { firestoreREST, COLLECTIONS } from "@/lib/firebase"
+import { DEALER_BY_MERK } from "@/lib/types"
 import { v4 as uuidv4 } from "uuid"
 
 // ==================== USERS ====================
@@ -581,7 +582,31 @@ export async function deleteMerk(id: string) {
 // ==================== DEALERS ====================
 
 export async function getDealers() {
-  return await firestoreREST.getCollection(COLLECTIONS.DEALERS)
+  try {
+    // First try to get from database
+    const dbDealers = await firestoreREST.getCollection(COLLECTIONS.DEALERS)
+    if (dbDealers && Array.isArray(dbDealers) && dbDealers.length > 0) {
+      return dbDealers
+    }
+  } catch (error) {
+    console.error("[v0] Error getting dealers from database:", error)
+  }
+
+  // If no dealers in DB or error, generate from DEALER_BY_MERK constant
+  const dealers: any[] = []
+  Object.entries(DEALER_BY_MERK).forEach(([merk, dealerNames]) => {
+    dealerNames.forEach((namaDealer, index) => {
+      dealers.push({
+        id: `${merk.toLowerCase()}-dealer-${index}`,
+        namaDealer,
+        merk,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      })
+    })
+  })
+  console.log("[v0] getDealers - generated dealers from constant:", dealers.length)
+  return dealers
 }
 
 export async function createDealer(dealerData: {
