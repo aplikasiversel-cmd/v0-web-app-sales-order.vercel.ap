@@ -720,6 +720,40 @@ let initializationPromise: Promise<any> | null = null
 let lastInitTime = 0
 const INIT_COOLDOWN = 300000 // 5 minutes
 
+// ==================== MIGRATION HELPERS ====================
+
+export async function migrateExistingProgramsToDealers() {
+  try {
+    const programs = await getPrograms()
+    if (!Array.isArray(programs) || programs.length === 0) return
+
+    for (const program of programs) {
+      // Skip if already has dealers assigned
+      if (program.dealers && program.dealers.length > 0) continue
+
+      const programNameUpper = (program.namaProgram || "").toUpperCase()
+      let assignedDealers: string[] = []
+
+      // Auto-assign dealers based on program name pattern
+      if (programNameUpper.includes("ASTRA")) {
+        assignedDealers = DEALER_BY_MERK["Daihatsu"]?.filter((d: string) => d.includes("ASTRA")) || []
+      } else if (programNameUpper.includes("TMS") || programNameUpper.includes("TRI MANDIRI")) {
+        assignedDealers = DEALER_BY_MERK["Daihatsu"]?.filter((d: string) => d.includes("TRI MANDIRI")) || []
+      } else if (program.merk) {
+        // If no pattern match, assign all dealers for the merk
+        assignedDealers = DEALER_BY_MERK[program.merk] || []
+      }
+
+      // Update program with assigned dealers
+      if (assignedDealers.length > 0) {
+        await firestoreREST.updateDocument(COLLECTIONS.PROGRAMS, program.id, { dealers: assignedDealers })
+      }
+    }
+  } catch (error) {
+    console.error("[v0] Error migrating programs to dealers:", error)
+  }
+}
+
 export async function initializeDefaultData() {
   const now = Date.now()
 
