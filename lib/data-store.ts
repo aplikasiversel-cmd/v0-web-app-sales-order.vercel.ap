@@ -139,6 +139,7 @@ function mapProgram(program: any): Program {
     id: program.id,
     namaProgram: program.namaProgram || program.nama_program,
     merk: program.merk,
+    dealers: program.dealers || program.dealer_list || [],
     jenisPembiayaan: program.jenisPembiayaan || program.jenis_pembiayaan,
     tdpPersen: program.tdpPersen || program.tdp_persen,
     tenorBunga: program.tenorBunga || program.tenor_bunga || [],

@@ -74,13 +74,14 @@ export default function SimulasiPage() {
     const merkLower = formData.merk.trim().toLowerCase()
     const jenisLower = formData.jenisPembiayaan.trim().toLowerCase()
 
+    // Filter programs: match merk, jenis, and dealer (if dealer is selected)
     return programs.filter(
       (p) =>
         p.merk?.trim().toLowerCase() === merkLower &&
         p.jenisPembiayaan?.trim().toLowerCase() === jenisLower &&
         p.isActive &&
-        // Filter by dealer: show program if no dealers specified OR selected dealer is in the list
-        (!p.dealers || p.dealers.length === 0 || (formData.dealer && p.dealers.includes(formData.dealer))),
+        // Strict dealer matching: only show programs where selected dealer is in the dealers list
+        (formData.dealer && p.dealers && p.dealers.length > 0 && p.dealers.includes(formData.dealer)),
     )
   }, [formData.merk, formData.jenisPembiayaan, formData.dealer, programs])
 
@@ -98,6 +99,10 @@ export default function SimulasiPage() {
     const fetchData = async () => {
       try {
         setIsLoading(true)
+        // First, migrate any existing programs that don't have dealers assigned
+        const { migrateExistingProgramsToDealers } = await import("@/app/actions/firebase-actions")
+        await migrateExistingProgramsToDealers()
+        
         const [cmos, progs] = await Promise.all([userStore.getByRole("cmo"), programStore.getAll()])
         setCmoList(Array.isArray(cmos) ? cmos : [])
         setPrograms(Array.isArray(progs) ? progs : [])
