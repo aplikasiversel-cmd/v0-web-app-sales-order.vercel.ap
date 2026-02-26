@@ -720,7 +720,111 @@ let initializationPromise: Promise<any> | null = null
 let lastInitTime = 0
 const INIT_COOLDOWN = 300000 // 5 minutes
 
+// ==================== DEALERS ====================
+
+export async function getDealers() {
+  return await firestoreREST.getCollection(COLLECTIONS.DEALERS)
+}
+
+export async function createDealer(dealerData: {
+  namaDealer: string
+  merk: string
+  nomorTelepon?: string
+  isActive?: boolean
+  alamat?: string
+}) {
+  const id = uuidv4()
+  const now = new Date().toISOString()
+
+  const dealer = {
+    namaDealer: dealerData.namaDealer,
+    merk: dealerData.merk,
+    nomorTelepon: dealerData.nomorTelepon || "",
+    alamat: dealerData.alamat || "",
+    isActive: dealerData.isActive !== false,
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  await firestoreREST.setDocument(COLLECTIONS.DEALERS, id, dealer)
+  return { id, ...dealer }
+}
+
+export async function updateDealer(id: string, updates: Partial<any>) {
+  if (!id) return
+  updates.updatedAt = new Date().toISOString()
+  await firestoreREST.updateDocument(COLLECTIONS.DEALERS, id, updates)
+  return true
+}
+
+export async function deleteDealer(id: string) {
+  return await firestoreREST.deleteDocument(COLLECTIONS.DEALERS, id)
+}
+
+// ==================== MERKS ====================
+
+export async function getMerks() {
+  return await firestoreREST.getCollection(COLLECTIONS.MERKS)
+}
+
+export async function createMerk(merkData: { nama: string }) {
+  const id = uuidv4()
+  const now = new Date().toISOString()
+
+  const merk = {
+    nama: merkData.nama,
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  await firestoreREST.setDocument(COLLECTIONS.MERKS, id, merk)
+  return { id, ...merk }
+}
+
+export async function updateMerk(id: string, updates: Partial<any>) {
+  if (!id) return
+  updates.updatedAt = new Date().toISOString()
+  await firestoreREST.updateDocument(COLLECTIONS.MERKS, id, updates)
+  return true
+}
+
+export async function deleteMerk(id: string) {
+  return await firestoreREST.deleteDocument(COLLECTIONS.MERKS, id)
+}
+
 // ==================== MIGRATION HELPERS ====================
+
+export async function ensureDealerMerkField() {
+  try {
+    const dealers = await getDealers()
+    if (!Array.isArray(dealers) || dealers.length === 0) return
+
+    for (const dealer of dealers) {
+      // If dealer is missing merk field, try to infer it from dealer name
+      if (!dealer.merk || dealer.merk === "") {
+        let inferredMerk = ""
+        const dealerNameUpper = (dealer.namaDealer || "").toUpperCase()
+
+        // Infer merk based on dealer name patterns
+        if (dealerNameUpper.includes("ASTRA") || dealerNameUpper.includes("DAIHATSU")) {
+          inferredMerk = "Daihatsu"
+        } else if (dealerNameUpper.includes("TRI MANDIRI") || dealerNameUpper.includes("TMS")) {
+          inferredMerk = "Daihatsu"
+        } else if (dealerNameUpper.includes("JAECOO") || dealerNameUpper.includes("CHERY")) {
+          inferredMerk = "JAECOO"
+        }
+
+        // Update dealer with inferred merk
+        if (inferredMerk) {
+          await updateDealer(dealer.id, { merk: inferredMerk })
+          console.log(`[v0] Updated dealer ${dealer.namaDealer} with merk: ${inferredMerk}`)
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[v0] Error ensuring dealer merk fields:", error)
+  }
+}
 
 export async function migrateExistingProgramsToDealers() {
   try {

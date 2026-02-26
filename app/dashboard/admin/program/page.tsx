@@ -86,6 +86,10 @@ export default function AdminProgramPage() {
 
   const loadDealers = async () => {
     try {
+      // First ensure all dealers have their merk field properly set
+      const { ensureDealerMerkField } = await import("@/app/actions/firebase-actions")
+      await ensureDealerMerkField()
+
       const dealersFromDb = await dealerStore.getAll()
       const mappedDealers = (dealersFromDb || []).map((d: any) => ({
         id: d.id || "",
@@ -93,7 +97,6 @@ export default function AdminProgramPage() {
         merk: (d.merk || "").trim(),  // Ensure merk is properly set
         isActive: d.isActive !== false,
       }))
-      console.log("[v0] loadDealers - mapped dealers:", mappedDealers.map(m => ({ name: m.namaDealer, merk: m.merk })))
       setAllDealers(mappedDealers)
     } catch (error) {
       console.error("Error loading dealers:", error)
@@ -116,7 +119,6 @@ export default function AdminProgramPage() {
         const dealerMerk = (d.merk || "").toLowerCase().trim()
         return dealerMerk === merkLower && d.isActive !== false
       })
-      console.log("[v0] Filtering dealers - merk:", formData.merk, "filtered count:", filtered.length, "all dealers:", allDealers.map(d => ({ name: d.namaDealer, merk: d.merk })))
       setFilteredDealers(filtered)
       // Reset dealers array if any selected dealer doesn't match new merk
       if (formData.dealers && formData.dealers.length > 0) {
