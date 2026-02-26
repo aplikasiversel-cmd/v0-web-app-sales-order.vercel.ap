@@ -722,6 +722,38 @@ const INIT_COOLDOWN = 300000 // 5 minutes
 
 // ==================== MIGRATION HELPERS ====================
 
+export async function ensureDealerMerkField() {
+  try {
+    const dealers = await getDealers()
+    if (!Array.isArray(dealers) || dealers.length === 0) return
+
+    for (const dealer of dealers) {
+      // If dealer is missing merk field, try to infer it from dealer name
+      if (!dealer.merk || dealer.merk === "") {
+        let inferredMerk = ""
+        const dealerNameUpper = (dealer.namaDealer || "").toUpperCase()
+
+        // Infer merk based on dealer name patterns
+        if (dealerNameUpper.includes("ASTRA") || dealerNameUpper.includes("DAIHATSU")) {
+          inferredMerk = "Daihatsu"
+        } else if (dealerNameUpper.includes("TRI MANDIRI") || dealerNameUpper.includes("TMS")) {
+          inferredMerk = "Daihatsu"
+        } else if (dealerNameUpper.includes("JAECOO") || dealerNameUpper.includes("CHERY")) {
+          inferredMerk = "JAECOO"
+        }
+
+        // Update dealer with inferred merk
+        if (inferredMerk) {
+          await updateDealer(dealer.id, { merk: inferredMerk })
+          console.log(`[v0] Updated dealer ${dealer.namaDealer} with merk: ${inferredMerk}`)
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[v0] Error ensuring dealer merk fields:", error)
+  }
+}
+
 export async function migrateExistingProgramsToDealers() {
   try {
     const programs = await getPrograms()

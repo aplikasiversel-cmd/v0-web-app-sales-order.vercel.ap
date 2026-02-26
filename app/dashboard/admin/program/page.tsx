@@ -86,11 +86,15 @@ export default function AdminProgramPage() {
 
   const loadDealers = async () => {
     try {
+      // First ensure all dealers have their merk field properly set
+      const { ensureDealerMerkField } = await import("@/app/actions/firebase-actions")
+      await ensureDealerMerkField()
+
       const dealersFromDb = await dealerStore.getAll()
       const mappedDealers = (dealersFromDb || []).map((d: any) => ({
         id: d.id || "",
-        namaDealer: d.namaDealer || d.nama_dealer || d.nama || "",
-        merk: d.merk || "",
+        namaDealer: (d.namaDealer || d.nama_dealer || d.nama || "").toUpperCase().trim(),
+        merk: (d.merk || "").trim(),  // Ensure merk is properly set
         isActive: d.isActive !== false,
       }))
       setAllDealers(mappedDealers)
@@ -109,11 +113,21 @@ export default function AdminProgramPage() {
   // Filter dealers when merk changes
   useEffect(() => {
     if (formData.merk && allDealers.length > 0) {
-      const filtered = allDealers.filter((d) => d.merk === formData.merk)
+      // Case-insensitive merk comparison
+      const merkLower = formData.merk.toLowerCase().trim()
+      const filtered = allDealers.filter((d) => {
+        const dealerMerk = (d.merk || "").toLowerCase().trim()
+        return dealerMerk === merkLower && d.isActive !== false
+      })
       setFilteredDealers(filtered)
-      // Reset dealer if current selection doesn't match new merk
-      if (formData.dealer && !filtered.find((d) => d.namaDealer === formData.dealer)) {
-        setFormData((prev) => ({ ...prev, dealer: "" }))
+      // Reset dealers array if any selected dealer doesn't match new merk
+      if (formData.dealers && formData.dealers.length > 0) {
+        const validDealers = formData.dealers.filter(selectedDealer => 
+          filtered.some(d => d.namaDealer === selectedDealer)
+        )
+        if (validDealers.length !== formData.dealers.length) {
+          setFormData((prev) => ({ ...prev, dealers: validDealers }))
+        }
       }
     } else {
       setFilteredDealers([])
