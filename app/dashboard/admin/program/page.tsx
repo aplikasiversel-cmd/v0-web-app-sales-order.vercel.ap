@@ -88,18 +88,26 @@ export default function AdminProgramPage() {
     try {
       // First ensure all dealers have their merk field properly set
       const { ensureDealerMerkField } = await import("@/app/actions/firebase-actions")
+      console.log("[v0] Calling ensureDealerMerkField...")
       await ensureDealerMerkField()
+      console.log("[v0] ensureDealerMerkField completed")
 
       const dealersFromDb = await dealerStore.getAll()
+      console.log("[v0] Raw dealers from DB:", dealersFromDb?.map((d: any) => ({ 
+        name: d.namaDealer, 
+        merk: d.merk 
+      })))
+      
       const mappedDealers = (dealersFromDb || []).map((d: any) => ({
         id: d.id || "",
         namaDealer: (d.namaDealer || d.nama_dealer || d.nama || "").toUpperCase().trim(),
         merk: (d.merk || "").trim(),  // Ensure merk is properly set
         isActive: d.isActive !== false,
       }))
+      console.log("[v0] Mapped dealers:", mappedDealers.map(m => ({ name: m.namaDealer, merk: m.merk })))
       setAllDealers(mappedDealers)
     } catch (error) {
-      console.error("Error loading dealers:", error)
+      console.error("[v0] Error loading dealers:", error)
     }
   }
 
@@ -117,8 +125,12 @@ export default function AdminProgramPage() {
       const merkLower = formData.merk.toLowerCase().trim()
       const filtered = allDealers.filter((d) => {
         const dealerMerk = (d.merk || "").toLowerCase().trim()
-        return dealerMerk === merkLower && d.isActive !== false
+        const matches = dealerMerk === merkLower && d.isActive !== false
+        console.log(`[v0] Dealer "${d.namaDealer}" - merk="${d.merk}" vs selected="${formData.merk}" - matches=${matches}`)
+        return matches
       })
+      console.log(`[v0] Filtering dealers for merk "${formData.merk}": found ${filtered.length} matches`)
+      console.log("[v0] Filtered dealers:", filtered.map(d => d.namaDealer))
       setFilteredDealers(filtered)
       // Reset dealers array if any selected dealer doesn't match new merk
       if (formData.dealers && formData.dealers.length > 0) {
