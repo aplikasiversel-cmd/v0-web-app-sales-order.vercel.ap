@@ -583,16 +583,25 @@ export async function deleteMerk(id: string) {
 
 export async function getDealers() {
   try {
-    // First try to get from database
+    console.log("[v0] getDealers - fetching from Firebase collection:", COLLECTIONS.DEALERS)
+    // Get dealers from database
     const dbDealers = await firestoreREST.getCollection(COLLECTIONS.DEALERS)
-    if (dbDealers && Array.isArray(dbDealers) && dbDealers.length > 0) {
-      return dbDealers
+    console.log("[v0] getDealers - dealers from DB:", dbDealers?.length || 0, dbDealers?.map((d: any) => ({ id: d.id, name: d.namaDealer, merk: d.merk })))
+    
+    if (dbDealers && Array.isArray(dbDealers)) {
+      // Return all dealers from database (including those without merk field set - they will be fixed by ensureDealerMerkField)
+      return dbDealers.length > 0 ? dbDealers : generateDealersFromConstant()
     }
+    
+    return generateDealersFromConstant()
   } catch (error) {
     console.error("[v0] Error getting dealers from database:", error)
+    return generateDealersFromConstant()
   }
+}
 
-  // If no dealers in DB or error, generate from DEALER_BY_MERK constant
+function generateDealersFromConstant() {
+  // Fallback: generate from DEALER_BY_MERK constant only if database is empty
   const dealers: any[] = []
   Object.entries(DEALER_BY_MERK).forEach(([merk, dealerNames]) => {
     dealerNames.forEach((namaDealer, index) => {
@@ -605,7 +614,7 @@ export async function getDealers() {
       })
     })
   })
-  console.log("[v0] getDealers - generated dealers from constant:", dealers.length)
+  console.log("[v0] generateDealersFromConstant - generated dealers from constant:", dealers.length)
   return dealers
 }
 
@@ -725,9 +734,14 @@ const INIT_COOLDOWN = 300000 // 5 minutes
 export async function ensureDealerMerkField() {
   try {
     const dealers = await getDealers()
-    if (!Array.isArray(dealers) || dealers.length === 0) return
+    console.log("[v0] ensureDealerMerkField - Processing dealers:", dealers.map(d => ({ name: d.namaDealer, merk: d.merk })))
+    if (!Array.isArray(dealers) || dealers.length === 0) {
+      console.log("[v0] No dealers found or not an array")
+      return
+    }
 
     for (const dealer of dealers) {
+      console.log(`[v0] Processing dealer: ${dealer.namaDealer}, current merk: "${dealer.merk}"`)
       // If dealer is missing merk field, try to infer it from dealer name
       if (!dealer.merk || dealer.merk === "") {
         let inferredMerk = ""
@@ -738,15 +752,21 @@ export async function ensureDealerMerkField() {
           inferredMerk = "Daihatsu"
         } else if (dealerNameUpper.includes("TRI MANDIRI") || dealerNameUpper.includes("TMS")) {
           inferredMerk = "Daihatsu"
+        } else if (dealerNameUpper.includes("BORNEO")) {
+          inferredMerk = "JAECOO"
         } else if (dealerNameUpper.includes("JAECOO") || dealerNameUpper.includes("CHERY")) {
           inferredMerk = "JAECOO"
         }
 
-        // Update dealer with inferred merk
-        if (inferredMerk) {
+        // Update dealer with inferred merk if we're not using the constant
+        if (inferredMerk && dealer.id && !dealer.id.includes("dealer-")) {
           await updateDealer(dealer.id, { merk: inferredMerk })
           console.log(`[v0] Updated dealer ${dealer.namaDealer} with merk: ${inferredMerk}`)
+        } else if (inferredMerk) {
+          console.log(`[v0] Dealer ${dealer.namaDealer} is from constant, skipping update`)
         }
+      } else {
+        console.log(`[v0] Dealer ${dealer.namaDealer} already has merk: ${dealer.merk}`)
       }
     }
   } catch (error) {

@@ -86,13 +86,27 @@ export default function AdminProgramPage() {
 
   const loadDealers = async () => {
     try {
+      // First ensure all dealers have their merk field properly set
+      const { ensureDealerMerkField } = await import("@/app/actions/firebase-actions")
+      const { firestoreREST } = await import("@/lib/firebase")
+      
+      await ensureDealerMerkField()
+      
+      // Clear cache to ensure fresh data
+      if (firestoreREST && firestoreREST.clearCache) {
+        firestoreREST.clearCache()
+      }
+
       const dealersFromDb = await dealerStore.getAll()
+      console.log("[v0] Raw dealers from DB:", dealersFromDb.map(d => ({ name: d.namaDealer, merk: d.merk })))
+      
       const mappedDealers = (dealersFromDb || []).map((d: any) => ({
         id: d.id || "",
-        namaDealer: (d.namaDealer || d.nama_dealer || d.nama || "").trim(),
-        merk: (d.merk || "").trim(),
+        namaDealer: (d.namaDealer || d.nama_dealer || d.nama || "").toUpperCase().trim(),
+        merk: (d.merk || "").trim(),  // Ensure merk is properly set
         isActive: d.isActive !== false,
       }))
+      console.log("[v0] Mapped dealers:", mappedDealers.map(d => ({ name: d.namaDealer, merk: d.merk })))
       setAllDealers(mappedDealers)
     } catch (error) {
       console.error("Error loading dealers:", error)
@@ -109,11 +123,18 @@ export default function AdminProgramPage() {
   // Filter dealers when merk changes
   useEffect(() => {
     if (formData.merk && allDealers.length > 0) {
+      // Case-insensitive merk comparison
       const merkLower = formData.merk.toLowerCase().trim()
+      console.log("[v0] Filtering dealers for merk:", formData.merk, "merkLower:", merkLower)
+      console.log("[v0] All dealers available:", allDealers.map(d => ({ name: d.namaDealer, merk: d.merk, isActive: d.isActive })))
+      
       const filtered = allDealers.filter((d) => {
         const dealerMerk = (d.merk || "").toLowerCase().trim()
-        return dealerMerk === merkLower && d.isActive !== false
+        const matches = dealerMerk === merkLower && d.isActive !== false
+        console.log(`[v0] Checking dealer ${d.namaDealer}: dealerMerk="${dealerMerk}", merkLower="${merkLower}", isActive=${d.isActive}, matches=${matches}`)
+        return matches
       })
+      console.log("[v0] Filtered dealers:", filtered.map(d => d.namaDealer))
       setFilteredDealers(filtered)
       // Reset dealers array if any selected dealer doesn't match new merk
       if (formData.dealers && formData.dealers.length > 0) {
