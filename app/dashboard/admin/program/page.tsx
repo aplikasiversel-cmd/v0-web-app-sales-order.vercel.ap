@@ -89,10 +89,11 @@ export default function AdminProgramPage() {
       const dealersFromDb = await dealerStore.getAll()
       const mappedDealers = (dealersFromDb || []).map((d: any) => ({
         id: d.id || "",
-        namaDealer: d.namaDealer || d.nama_dealer || d.nama || "",
-        merk: d.merk || "",
+        namaDealer: (d.namaDealer || d.nama_dealer || d.nama || "").toUpperCase().trim(),
+        merk: (d.merk || "").trim(),  // Ensure merk is properly set
         isActive: d.isActive !== false,
       }))
+      console.log("[v0] loadDealers - mapped dealers:", mappedDealers.map(m => ({ name: m.namaDealer, merk: m.merk })))
       setAllDealers(mappedDealers)
     } catch (error) {
       console.error("Error loading dealers:", error)
@@ -109,11 +110,22 @@ export default function AdminProgramPage() {
   // Filter dealers when merk changes
   useEffect(() => {
     if (formData.merk && allDealers.length > 0) {
-      const filtered = allDealers.filter((d) => d.merk === formData.merk)
+      // Case-insensitive merk comparison
+      const merkLower = formData.merk.toLowerCase().trim()
+      const filtered = allDealers.filter((d) => {
+        const dealerMerk = (d.merk || "").toLowerCase().trim()
+        return dealerMerk === merkLower && d.isActive !== false
+      })
+      console.log("[v0] Filtering dealers - merk:", formData.merk, "filtered count:", filtered.length, "all dealers:", allDealers.map(d => ({ name: d.namaDealer, merk: d.merk })))
       setFilteredDealers(filtered)
-      // Reset dealer if current selection doesn't match new merk
-      if (formData.dealer && !filtered.find((d) => d.namaDealer === formData.dealer)) {
-        setFormData((prev) => ({ ...prev, dealer: "" }))
+      // Reset dealers array if any selected dealer doesn't match new merk
+      if (formData.dealers && formData.dealers.length > 0) {
+        const validDealers = formData.dealers.filter(selectedDealer => 
+          filtered.some(d => d.namaDealer === selectedDealer)
+        )
+        if (validDealers.length !== formData.dealers.length) {
+          setFormData((prev) => ({ ...prev, dealers: validDealers }))
+        }
       }
     } else {
       setFilteredDealers([])
