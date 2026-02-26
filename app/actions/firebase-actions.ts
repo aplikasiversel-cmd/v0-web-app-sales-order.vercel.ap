@@ -757,41 +757,6 @@ export async function updateDealer(id: string, updates: Partial<any>) {
   return true
 }
 
-export async function deleteDealer(id: string) {
-  return await firestoreREST.deleteDocument(COLLECTIONS.DEALERS, id)
-}
-
-// ==================== MERKS ====================
-
-export async function getMerks() {
-  return await firestoreREST.getCollection(COLLECTIONS.MERKS)
-}
-
-export async function createMerk(merkData: { nama: string }) {
-  const id = uuidv4()
-  const now = new Date().toISOString()
-
-  const merk = {
-    nama: merkData.nama,
-    createdAt: now,
-    updatedAt: now,
-  }
-
-  await firestoreREST.setDocument(COLLECTIONS.MERKS, id, merk)
-  return { id, ...merk }
-}
-
-export async function updateMerk(id: string, updates: Partial<any>) {
-  if (!id) return
-  updates.updatedAt = new Date().toISOString()
-  await firestoreREST.updateDocument(COLLECTIONS.MERKS, id, updates)
-  return true
-}
-
-export async function deleteMerk(id: string) {
-  return await firestoreREST.deleteDocument(COLLECTIONS.MERKS, id)
-}
-
 // ==================== MIGRATION HELPERS ====================
 
 export async function ensureDealerMerkField() {
