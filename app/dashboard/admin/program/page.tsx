@@ -86,15 +86,11 @@ export default function AdminProgramPage() {
 
   const loadDealers = async () => {
     try {
-      // First ensure all dealers have their merk field properly set
-      const { ensureDealerMerkField } = await import("@/app/actions/firebase-actions")
-      await ensureDealerMerkField()
-
       const dealersFromDb = await dealerStore.getAll()
       const mappedDealers = (dealersFromDb || []).map((d: any) => ({
         id: d.id || "",
-        namaDealer: (d.namaDealer || d.nama_dealer || d.nama || "").toUpperCase().trim(),
-        merk: (d.merk || "").trim(),  // Ensure merk is properly set
+        namaDealer: (d.namaDealer || d.nama_dealer || d.nama || "").trim(),
+        merk: (d.merk || "").trim(),
         isActive: d.isActive !== false,
       }))
       setAllDealers(mappedDealers)
@@ -113,7 +109,6 @@ export default function AdminProgramPage() {
   // Filter dealers when merk changes
   useEffect(() => {
     if (formData.merk && allDealers.length > 0) {
-      // Case-insensitive merk comparison
       const merkLower = formData.merk.toLowerCase().trim()
       const filtered = allDealers.filter((d) => {
         const dealerMerk = (d.merk || "").toLowerCase().trim()
