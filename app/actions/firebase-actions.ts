@@ -720,43 +720,6 @@ let initializationPromise: Promise<any> | null = null
 let lastInitTime = 0
 const INIT_COOLDOWN = 300000 // 5 minutes
 
-// ==================== DEALERS ====================
-
-export async function getDealers() {
-  return await firestoreREST.getCollection(COLLECTIONS.DEALERS)
-}
-
-export async function createDealer(dealerData: {
-  namaDealer: string
-  merk: string
-  nomorTelepon?: string
-  isActive?: boolean
-  alamat?: string
-}) {
-  const id = uuidv4()
-  const now = new Date().toISOString()
-
-  const dealer = {
-    namaDealer: dealerData.namaDealer,
-    merk: dealerData.merk,
-    nomorTelepon: dealerData.nomorTelepon || "",
-    alamat: dealerData.alamat || "",
-    isActive: dealerData.isActive !== false,
-    createdAt: now,
-    updatedAt: now,
-  }
-
-  await firestoreREST.setDocument(COLLECTIONS.DEALERS, id, dealer)
-  return { id, ...dealer }
-}
-
-export async function updateDealer(id: string, updates: Partial<any>) {
-  if (!id) return
-  updates.updatedAt = new Date().toISOString()
-  await firestoreREST.updateDocument(COLLECTIONS.DEALERS, id, updates)
-  return true
-}
-
 // ==================== MIGRATION HELPERS ====================
 
 export async function ensureDealerMerkField() {
