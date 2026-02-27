@@ -583,10 +583,8 @@ export async function deleteMerk(id: string) {
 
 export async function getDealers() {
   try {
-    console.log("[v0] getDealers - fetching from Firebase collection:", COLLECTIONS.DEALERS)
     // Get dealers from database
     const dbDealers = await firestoreREST.getCollection(COLLECTIONS.DEALERS)
-    console.log("[v0] getDealers - dealers from DB:", dbDealers?.length || 0, dbDealers?.map((d: any) => ({ id: d.id, name: d.namaDealer, merk: d.merk })))
     
     if (dbDealers && Array.isArray(dbDealers)) {
       // Return all dealers from database (including those without merk field set - they will be fixed by ensureDealerMerkField)
@@ -595,7 +593,7 @@ export async function getDealers() {
     
     return generateDealersFromConstant()
   } catch (error) {
-    console.error("[v0] Error getting dealers from database:", error)
+    console.error("Error getting dealers from database:", error)
     return generateDealersFromConstant()
   }
 }
@@ -614,7 +612,6 @@ function generateDealersFromConstant() {
       })
     })
   })
-  console.log("[v0] generateDealersFromConstant - generated dealers from constant:", dealers.length)
   return dealers
 }
 
@@ -734,14 +731,9 @@ const INIT_COOLDOWN = 300000 // 5 minutes
 export async function ensureDealerMerkField() {
   try {
     const dealers = await getDealers()
-    console.log("[v0] ensureDealerMerkField - Processing dealers:", dealers.map(d => ({ name: d.namaDealer, merk: d.merk })))
-    if (!Array.isArray(dealers) || dealers.length === 0) {
-      console.log("[v0] No dealers found or not an array")
-      return
-    }
+    if (!Array.isArray(dealers) || dealers.length === 0) return
 
     for (const dealer of dealers) {
-      console.log(`[v0] Processing dealer: ${dealer.namaDealer}, current merk: "${dealer.merk}"`)
       // If dealer is missing merk field, try to infer it from dealer name
       if (!dealer.merk || dealer.merk === "") {
         let inferredMerk = ""
@@ -761,16 +753,11 @@ export async function ensureDealerMerkField() {
         // Update dealer with inferred merk if we're not using the constant
         if (inferredMerk && dealer.id && !dealer.id.includes("dealer-")) {
           await updateDealer(dealer.id, { merk: inferredMerk })
-          console.log(`[v0] Updated dealer ${dealer.namaDealer} with merk: ${inferredMerk}`)
-        } else if (inferredMerk) {
-          console.log(`[v0] Dealer ${dealer.namaDealer} is from constant, skipping update`)
         }
-      } else {
-        console.log(`[v0] Dealer ${dealer.namaDealer} already has merk: ${dealer.merk}`)
       }
     }
   } catch (error) {
-    console.error("[v0] Error ensuring dealer merk fields:", error)
+    console.error("Error ensuring dealer merk fields:", error)
   }
 }
 
