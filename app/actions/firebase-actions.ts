@@ -585,15 +585,18 @@ export async function getDealers() {
   try {
     // Get dealers from database
     const dbDealers = await firestoreREST.getCollection(COLLECTIONS.DEALERS)
+    console.log("[v0] getDealers - dbDealers from firestoreREST:", dbDealers)
     
     if (dbDealers && Array.isArray(dbDealers)) {
+      console.log("[v0] getDealers - returning", dbDealers.length, "dealers from database")
       // Return all dealers from database (including those without merk field set - they will be fixed by ensureDealerMerkField)
       return dbDealers.length > 0 ? dbDealers : generateDealersFromConstant()
     }
     
+    console.log("[v0] getDealers - falling back to constant")
     return generateDealersFromConstant()
   } catch (error) {
-    console.error("Error getting dealers from database:", error)
+    console.error("[v0] Error getting dealers from database:", error)
     return generateDealersFromConstant()
   }
 }
@@ -731,9 +734,14 @@ const INIT_COOLDOWN = 300000 // 5 minutes
 export async function ensureDealerMerkField() {
   try {
     const dealers = await getDealers()
-    if (!Array.isArray(dealers) || dealers.length === 0) return
+    console.log("[v0] ensureDealerMerkField - dealers received:", dealers)
+    if (!Array.isArray(dealers) || dealers.length === 0) {
+      console.log("[v0] ensureDealerMerkField - no dealers")
+      return
+    }
 
     for (const dealer of dealers) {
+      console.log(`[v0] ensureDealerMerkField - checking ${dealer.namaDealer}, merk: "${dealer.merk}"`)
       // If dealer is missing merk field, try to infer it from dealer name
       if (!dealer.merk || dealer.merk === "") {
         let inferredMerk = ""
@@ -752,12 +760,13 @@ export async function ensureDealerMerkField() {
 
         // Update dealer with inferred merk if we're not using the constant
         if (inferredMerk && dealer.id && !dealer.id.includes("dealer-")) {
+          console.log(`[v0] ensureDealerMerkField - updating ${dealer.namaDealer} with merk: ${inferredMerk}`)
           await updateDealer(dealer.id, { merk: inferredMerk })
         }
       }
     }
   } catch (error) {
-    console.error("Error ensuring dealer merk fields:", error)
+    console.error("[v0] Error ensuring dealer merk fields:", error)
   }
 }
 
