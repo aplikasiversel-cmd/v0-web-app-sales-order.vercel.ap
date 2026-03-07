@@ -758,36 +758,6 @@ export async function ensureDealerMerkField() {
   }
 }
 
-    for (const dealer of dealers) {
-      console.log(`[v0] ensureDealerMerkField - checking ${dealer.namaDealer}, merk: "${dealer.merk}"`)
-      // If dealer is missing merk field, try to infer it from dealer name
-      if (!dealer.merk || dealer.merk === "") {
-        let inferredMerk = ""
-        const dealerNameUpper = (dealer.namaDealer || "").toUpperCase()
-
-        // Infer merk based on dealer name patterns
-        if (dealerNameUpper.includes("ASTRA") || dealerNameUpper.includes("DAIHATSU")) {
-          inferredMerk = "Daihatsu"
-        } else if (dealerNameUpper.includes("TRI MANDIRI") || dealerNameUpper.includes("TMS")) {
-          inferredMerk = "Daihatsu"
-        } else if (dealerNameUpper.includes("BORNEO")) {
-          inferredMerk = "JAECOO"
-        } else if (dealerNameUpper.includes("JAECOO") || dealerNameUpper.includes("CHERY")) {
-          inferredMerk = "JAECOO"
-        }
-
-        // Update dealer with inferred merk if we're not using the constant
-        if (inferredMerk && dealer.id && !dealer.id.includes("dealer-")) {
-          console.log(`[v0] ensureDealerMerkField - updating ${dealer.namaDealer} with merk: ${inferredMerk}`)
-          await updateDealer(dealer.id, { merk: inferredMerk })
-        }
-      }
-    }
-  } catch (error) {
-    console.error("[v0] Error ensuring dealer merk fields:", error)
-  }
-}
-
 export async function migrateExistingProgramsToDealers() {
   try {
     const programs = await getPrograms()
