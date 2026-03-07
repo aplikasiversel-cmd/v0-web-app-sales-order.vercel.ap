@@ -33,11 +33,11 @@ import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useAuth } from "@/lib/auth-context"
-import { programStore, dealerStore } from "@/lib/data-store"
+import { programStore } from "@/lib/data-store"
 import type { Program, JenisPembiayaan, Dealer } from "@/lib/types"
 import { JENIS_PEMBIAYAAN } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
-import { getMerks } from "@/app/actions/db-actions"
+import { getMerks, getDealers } from "@/app/actions/db-actions"
 
 const DEFAULT_TENORS = [12, 24, 36, 48, 60]
 
@@ -86,27 +86,13 @@ export default function AdminProgramPage() {
 
   const loadDealers = async () => {
     try {
-      // First ensure all dealers have their merk field properly set
-      const { ensureDealerMerkField } = await import("@/app/actions/firebase-actions")
-      const { firestoreREST } = await import("@/lib/firebase")
-      
-      await ensureDealerMerkField()
-      
-      // Clear cache to ensure fresh data
-      if (firestoreREST && firestoreREST.clearCache) {
-        firestoreREST.clearCache()
-      }
-
-      const dealersFromDb = await dealerStore.getAll()
-      console.log("[v0] Raw dealers from DB:", dealersFromDb)
-      
+      const dealersFromDb = await getDealers()
       const mappedDealers = (dealersFromDb || []).map((d: any) => ({
-        id: d.id || "",
-        namaDealer: (d.namaDealer || d.nama_dealer || d.nama || "").toUpperCase().trim(),
+        id: d.namaDealer || "",
+        namaDealer: (d.namaDealer || "").toUpperCase().trim(),
         merk: (d.merk || "").trim(),
-        isActive: d.isActive !== false,
+        isActive: true,
       }))
-      console.log("[v0] Mapped dealers:", mappedDealers)
       setAllDealers(mappedDealers)
     } catch (error) {
       console.error("Error loading dealers:", error)
@@ -125,18 +111,10 @@ export default function AdminProgramPage() {
     if (formData.merk && allDealers.length > 0) {
       // Case-insensitive merk comparison
       const merkLower = formData.merk.toLowerCase().trim()
-      console.log("[v0] Filtering for merk:", formData.merk, "merkLower:", merkLower)
-      console.log("[v0] All dealers:", allDealers)
-      
       const filtered = allDealers.filter((d) => {
         const dealerMerk = (d.merk || "").toLowerCase().trim()
-        const matches = dealerMerk === merkLower && d.isActive !== false
-        if (formData.merk === "JAECOO") {
-          console.log(`[v0] Checking ${d.namaDealer}: dealerMerk="${dealerMerk}", matches=${matches}`)
-        }
-        return matches
+        return dealerMerk === merkLower && d.isActive !== false
       })
-      console.log("[v0] Filtered dealers:", filtered)
       setFilteredDealers(filtered)
       // Reset dealers array if any selected dealer doesn't match new merk
       if (formData.dealers && formData.dealers.length > 0) {

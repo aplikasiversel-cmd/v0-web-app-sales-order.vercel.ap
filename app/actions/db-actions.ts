@@ -1363,6 +1363,43 @@ export async function getAllOrderNotes(): Promise<
   }
 }
 
+// ==================== MERKS & DEALERS ====================
+
+export async function getMerks(): Promise<Array<{ id: string; nama: string }>> {
+  try {
+    // Get unique merks from programs that are active
+    const rows = await sql`
+      SELECT DISTINCT merk FROM programs WHERE is_active = true ORDER BY merk
+    `
+    return rows.map((row) => ({
+      id: row.merk as string,
+      nama: row.merk as string,
+    }))
+  } catch (error) {
+    console.error("[DB] getMerks error:", error)
+    return []
+  }
+}
+
+export async function getDealers(): Promise<Array<{ merk: string; namaDealer: string }>> {
+  try {
+    // Get dealers from the dealers table, ordered by merk and name
+    const rows = await sql`
+      SELECT merk, nama_dealer 
+      FROM dealers 
+      WHERE is_active = true
+      ORDER BY merk, nama_dealer
+    `
+    return rows.map((row) => ({
+      merk: row.merk as string,
+      namaDealer: row.nama_dealer as string,
+    }))
+  } catch (error) {
+    console.error("[DB] getDealers error:", error)
+    return []
+  }
+}
+
 // ==================== INITIALIZATION ====================
 
 let isInitializing = false
