@@ -87,9 +87,10 @@ export default function AdminProgramPage() {
   const loadDealers = async () => {
     try {
       const dealersFromDb = await getDealers()
+      console.log("[v0] Loaded dealers:", dealersFromDb)
       setAllDealers(dealersFromDb || [])
     } catch (error) {
-      console.error("Error loading dealers:", error)
+      console.error("[v0] Error loading dealers:", error)
     }
   }
 
@@ -102,11 +103,13 @@ export default function AdminProgramPage() {
 
   // Filter dealers when merk changes
   useEffect(() => {
+    console.log("[v0] Filter effect: formData.merk=", formData.merk, "allDealers.length=", allDealers.length)
     if (formData.merk && allDealers.length > 0) {
       // Match merk exactly (from database, should already be properly cased)
       const filtered = allDealers.filter((d) => {
         return d.merk === formData.merk && d.isActive !== false
       })
+      console.log("[v0] Filtered dealers for", formData.merk, ":", filtered)
       setFilteredDealers(filtered)
       // Reset dealers array if any selected dealer doesn't match new merk
       if (formData.dealers && formData.dealers.length > 0) {

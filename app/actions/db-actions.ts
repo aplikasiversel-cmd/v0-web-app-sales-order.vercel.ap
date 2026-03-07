@@ -931,7 +931,8 @@ export async function deleteAktivitas(id: string): Promise<void> {
 export async function getDealers(): Promise<Dealer[]> {
   try {
     const rows = await sql`SELECT * FROM dealers ORDER BY nama_dealer ASC`
-    return rows.map((row) => ({
+    console.log("[v0] getDealers - rows from database:", rows)
+    const mapped = rows.map((row) => ({
       id: row.id as string,
       kodeDealer: row.kode_dealer as string,
       merk: row.merk as string,
@@ -941,8 +942,10 @@ export async function getDealers(): Promise<Dealer[]> {
       isActive: row.is_active as boolean,
       createdAt: toISOString(row.created_at as Date | string),
     }))
+    console.log("[v0] getDealers - mapped dealers:", mapped)
+    return mapped
   } catch (error) {
-    console.error("[DB] getDealers error:", error)
+    console.error("[v0] getDealers error:", error)
     return []
   }
 }
@@ -950,6 +953,7 @@ export async function getDealers(): Promise<Dealer[]> {
 export async function getDealersByMerk(merk: string): Promise<Dealer[]> {
   try {
     const rows = await sql`SELECT * FROM dealers WHERE merk = ${merk} AND is_active = true ORDER BY nama_dealer ASC`
+    console.log("[v0] getDealersByMerk for", merk, "- rows:", rows)
     return rows.map((row) => ({
       id: row.id as string,
       kodeDealer: row.kode_dealer as string,
