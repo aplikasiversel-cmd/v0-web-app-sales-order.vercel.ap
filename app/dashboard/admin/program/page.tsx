@@ -87,13 +87,7 @@ export default function AdminProgramPage() {
   const loadDealers = async () => {
     try {
       const dealersFromDb = await getDealers()
-      const mappedDealers = (dealersFromDb || []).map((d: any) => ({
-        id: d.namaDealer || "",
-        namaDealer: (d.namaDealer || "").toUpperCase().trim(),
-        merk: (d.merk || "").trim(),
-        isActive: true,
-      }))
-      setAllDealers(mappedDealers)
+      setAllDealers(dealersFromDb || [])
     } catch (error) {
       console.error("Error loading dealers:", error)
     }
@@ -109,11 +103,9 @@ export default function AdminProgramPage() {
   // Filter dealers when merk changes
   useEffect(() => {
     if (formData.merk && allDealers.length > 0) {
-      // Case-insensitive merk comparison
-      const merkLower = formData.merk.toLowerCase().trim()
+      // Match merk exactly (from database, should already be properly cased)
       const filtered = allDealers.filter((d) => {
-        const dealerMerk = (d.merk || "").toLowerCase().trim()
-        return dealerMerk === merkLower && d.isActive !== false
+        return d.merk === formData.merk && d.isActive !== false
       })
       setFilteredDealers(filtered)
       // Reset dealers array if any selected dealer doesn't match new merk
