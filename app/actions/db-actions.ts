@@ -931,8 +931,7 @@ export async function deleteAktivitas(id: string): Promise<void> {
 export async function getDealers(): Promise<Dealer[]> {
   try {
     const rows = await sql`SELECT * FROM dealers ORDER BY nama_dealer ASC`
-    console.log("[v0] getDealers - rows from database:", rows)
-    const mapped = rows.map((row) => ({
+    return rows.map((row) => ({
       id: row.id as string,
       kodeDealer: row.kode_dealer as string,
       merk: row.merk as string,
@@ -942,10 +941,8 @@ export async function getDealers(): Promise<Dealer[]> {
       isActive: row.is_active as boolean,
       createdAt: toISOString(row.created_at as Date | string),
     }))
-    console.log("[v0] getDealers - mapped dealers:", mapped)
-    return mapped
   } catch (error) {
-    console.error("[v0] getDealers error:", error)
+    console.error("[DB] getDealers error:", error)
     return []
   }
 }
@@ -953,7 +950,6 @@ export async function getDealers(): Promise<Dealer[]> {
 export async function getDealersByMerk(merk: string): Promise<Dealer[]> {
   try {
     const rows = await sql`SELECT * FROM dealers WHERE merk = ${merk} AND is_active = true ORDER BY nama_dealer ASC`
-    console.log("[v0] getDealersByMerk for", merk, "- rows:", rows)
     return rows.map((row) => ({
       id: row.id as string,
       kodeDealer: row.kode_dealer as string,
@@ -996,11 +992,30 @@ export async function createDealer(dealer: Omit<Dealer, "createdAt">): Promise<D
       `
     }
 
-    return {
+    const result = {
       ...dealer,
       id,
       createdAt: now,
     }
+
+    // Sync to Firebase automatically
+    try {
+      const { createDealerFirebaseSync } = await import("./firebase-actions")
+      await createDealerFirebaseSync({
+        id: result.id,
+        kodeDealer: result.kodeDealer,
+        merk: result.merk,
+        namaDealer: result.namaDealer,
+        alamat: result.alamat,
+        noTelp: result.noTelp,
+        isActive: result.isActive,
+      })
+    } catch (fbError) {
+      console.warn("[DB] Firebase sync warning for dealer:", fbError)
+      // Don't fail the operation if Firebase sync fails
+    }
+
+    return result
   } catch (error) {
     console.error("[DB] createDealer error:", error)
     return null
@@ -1046,6 +1061,16 @@ export async function updateDealer(id: string, updates: Partial<Dealer>): Promis
     const query = `UPDATE dealers SET ${setClause} WHERE id = $1`
 
     await sql.query(query, [id, ...values])
+    
+    // Sync to Firebase automatically
+    try {
+      const { updateDealerFirebaseSync } = await import("./firebase-actions")
+      await updateDealerFirebaseSync(id, updates)
+    } catch (fbError) {
+      console.warn("[DB] Firebase sync warning for updateDealer:", fbError)
+      // Don't fail the operation if Firebase sync fails
+    }
+    
     return true
   } catch (error) {
     console.error("[DB] updateDealer error:", error)
@@ -1056,6 +1081,16 @@ export async function updateDealer(id: string, updates: Partial<Dealer>): Promis
 export async function deleteDealer(id: string): Promise<boolean> {
   try {
     await sql`DELETE FROM dealers WHERE id = ${id}`
+    
+    // Sync to Firebase automatically
+    try {
+      const { deleteDealerFirebaseSync } = await import("./firebase-actions")
+      await deleteDealerFirebaseSync(id)
+    } catch (fbError) {
+      console.warn("[DB] Firebase sync warning for deleteDealer:", fbError)
+      // Don't fail the operation if Firebase sync fails
+    }
+    
     return true
   } catch (error) {
     console.error("[DB] deleteDealer error:", error)
@@ -1090,7 +1125,18 @@ export async function createMerk(nama: string, isDefault = false): Promise<{ id:
       RETURNING id, nama
     `
     if (result.length > 0) {
-      return { id: result[0].id as number, nama: result[0].nama as string }
+      const merkData = { id: result[0].id as number, nama: result[0].nama as string }
+      
+      // Sync to Firebase automatically
+      try {
+        const { createMerkFirebaseSync } = await import("./firebase-actions")
+        await createMerkFirebaseSync(merkData.nama, isDefault)
+      } catch (fbError) {
+        console.warn("[DB] Firebase sync warning for merk:", fbError)
+        // Don't fail the operation if Firebase sync fails
+      }
+      
+      return merkData
     }
     return null
   } catch (error) {
