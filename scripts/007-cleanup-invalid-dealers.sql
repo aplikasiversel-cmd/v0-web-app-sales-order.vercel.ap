@@ -1,17 +1,31 @@
--- Script to clean up programs that reference dealers that no longer exist in the dealers table
--- This script removes program_dealers entries that reference non-existent dealers
+-- Clean up invalid dealer references from all tables
+-- This script removes dealer names that don't exist in the dealers table
 
--- First, let's see which dealers are referenced in programs but don't exist
-SELECT DISTINCT pd.dealer_id 
-FROM program_dealers pd
-LEFT JOIN dealers d ON pd.dealer_id = d.id
-WHERE d.id IS NULL;
+-- Remove invalid dealer references from simulasi table
+DELETE FROM simulasi 
+WHERE dealer IS NOT NULL 
+AND dealer NOT IN (SELECT DISTINCT nama_dealer FROM dealers);
 
--- Delete program_dealers that reference non-existent dealers
-DELETE FROM program_dealers 
-WHERE dealer_id NOT IN (SELECT id FROM dealers);
+-- Remove invalid dealer references from aktivitas table
+DELETE FROM aktivitas 
+WHERE dealer IS NOT NULL 
+AND dealer NOT IN (SELECT DISTINCT nama_dealer FROM dealers);
 
--- Verify the cleanup
-SELECT COUNT(*) as remaining_invalid_refs 
-FROM program_dealers 
-WHERE dealer_id NOT IN (SELECT id FROM dealers);
+-- Remove invalid dealer references from orders table
+DELETE FROM orders 
+WHERE dealer IS NOT NULL 
+AND dealer NOT IN (SELECT DISTINCT nama_dealer FROM dealers);
+
+-- Set invalid dealer assignments to NULL in users table (keep user records, just clear invalid dealer)
+UPDATE users SET dealer = NULL 
+WHERE dealer IS NOT NULL 
+AND dealer NOT IN (SELECT DISTINCT nama_dealer FROM dealers);
+
+-- Display summary - show remaining valid dealer references in each table
+SELECT 'Valid dealers remaining in Simulasi' as summary, COUNT(*) as count FROM simulasi WHERE dealer IS NOT NULL
+UNION ALL
+SELECT 'Valid dealers remaining in Aktivitas', COUNT(*) FROM aktivitas WHERE dealer IS NOT NULL
+UNION ALL
+SELECT 'Valid dealers remaining in Orders', COUNT(*) FROM orders WHERE dealer IS NOT NULL
+UNION ALL
+SELECT 'Valid dealer assignments in Users', COUNT(*) FROM users WHERE dealer IS NOT NULL;
