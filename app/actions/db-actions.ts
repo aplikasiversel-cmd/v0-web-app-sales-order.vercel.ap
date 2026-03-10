@@ -971,10 +971,12 @@ export async function createDealer(dealer: Omit<Dealer, "createdAt">): Promise<D
     const id = dealer.id || crypto.randomUUID()
     const now = new Date().toISOString()
 
-    // Check if dealer already exists
-    const existing = await sql`SELECT id FROM dealers WHERE id = ${id}`
+    // Check if dealer already exists by ID or kode_dealer
+    const existingById = await sql`SELECT id FROM dealers WHERE id = ${id}`
+    const existingByCode = await sql`SELECT id FROM dealers WHERE kode_dealer = ${dealer.kodeDealer}`
 
-    if (existing.length > 0) {
+    if (existingById.length > 0) {
+      // Update existing dealer by ID
       await sql`
         UPDATE dealers SET
           kode_dealer = ${dealer.kodeDealer},
@@ -985,7 +987,26 @@ export async function createDealer(dealer: Omit<Dealer, "createdAt">): Promise<D
           is_active = ${dealer.isActive}
         WHERE id = ${id}
       `
+    } else if (existingByCode.length > 0) {
+      // Update existing dealer by kode_dealer
+      const existingId = existingByCode[0].id as string
+      await sql`
+        UPDATE dealers SET
+          merk = ${dealer.merk},
+          nama_dealer = ${dealer.namaDealer},
+          alamat = ${dealer.alamat || null},
+          no_telp = ${dealer.noTelp || null},
+          is_active = ${dealer.isActive}
+        WHERE id = ${existingId}
+      `
+      // Use the existing ID instead of the new one
+      return {
+        ...dealer,
+        id: existingId,
+        createdAt: now,
+      }
     } else {
+      // Insert new dealer
       await sql`
         INSERT INTO dealers (id, kode_dealer, merk, nama_dealer, alamat, no_telp, is_active, created_at)
         VALUES (${id}, ${dealer.kodeDealer}, ${dealer.merk}, ${dealer.namaDealer}, ${dealer.alamat || null}, ${dealer.noTelp || null}, ${dealer.isActive}, ${now})
