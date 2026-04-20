@@ -971,10 +971,12 @@ export async function createDealer(dealer: Omit<Dealer, "createdAt">): Promise<D
     const id = dealer.id || crypto.randomUUID()
     const now = new Date().toISOString()
 
-    // Check if dealer already exists
-    const existing = await sql`SELECT id FROM dealers WHERE id = ${id}`
+    // Check if dealer already exists by ID or kode_dealer
+    const existingById = await sql`SELECT id FROM dealers WHERE id = ${id}`
+    const existingByCode = await sql`SELECT id FROM dealers WHERE kode_dealer = ${dealer.kodeDealer}`
 
-    if (existing.length > 0) {
+    if (existingById.length > 0) {
+      // Update existing dealer by ID
       await sql`
         UPDATE dealers SET
           kode_dealer = ${dealer.kodeDealer},
@@ -985,18 +987,56 @@ export async function createDealer(dealer: Omit<Dealer, "createdAt">): Promise<D
           is_active = ${dealer.isActive}
         WHERE id = ${id}
       `
+    } else if (existingByCode.length > 0) {
+      // Update existing dealer by kode_dealer
+      const existingId = existingByCode[0].id as string
+      await sql`
+        UPDATE dealers SET
+          merk = ${dealer.merk},
+          nama_dealer = ${dealer.namaDealer},
+          alamat = ${dealer.alamat || null},
+          no_telp = ${dealer.noTelp || null},
+          is_active = ${dealer.isActive}
+        WHERE id = ${existingId}
+      `
+      // Use the existing ID instead of the new one
+      return {
+        ...dealer,
+        id: existingId,
+        createdAt: now,
+      }
     } else {
+      // Insert new dealer
       await sql`
         INSERT INTO dealers (id, kode_dealer, merk, nama_dealer, alamat, no_telp, is_active, created_at)
         VALUES (${id}, ${dealer.kodeDealer}, ${dealer.merk}, ${dealer.namaDealer}, ${dealer.alamat || null}, ${dealer.noTelp || null}, ${dealer.isActive}, ${now})
       `
     }
 
-    return {
+    const result = {
       ...dealer,
       id,
       createdAt: now,
     }
+
+    // Sync to Firebase automatically
+    try {
+      const { createDealerFirebaseSync } = await import("./firebase-actions")
+      await createDealerFirebaseSync({
+        id: result.id,
+        kodeDealer: result.kodeDealer,
+        merk: result.merk,
+        namaDealer: result.namaDealer,
+        alamat: result.alamat,
+        noTelp: result.noTelp,
+        isActive: result.isActive,
+      })
+    } catch (fbError) {
+      console.warn("[DB] Firebase sync warning for dealer:", fbError)
+      // Don't fail the operation if Firebase sync fails
+    }
+
+    return result
   } catch (error) {
     console.error("[DB] createDealer error:", error)
     return null
@@ -1042,6 +1082,16 @@ export async function updateDealer(id: string, updates: Partial<Dealer>): Promis
     const query = `UPDATE dealers SET ${setClause} WHERE id = $1`
 
     await sql.query(query, [id, ...values])
+    
+    // Sync to Firebase automatically
+    try {
+      const { updateDealerFirebaseSync } = await import("./firebase-actions")
+      await updateDealerFirebaseSync(id, updates)
+    } catch (fbError) {
+      console.warn("[DB] Firebase sync warning for updateDealer:", fbError)
+      // Don't fail the operation if Firebase sync fails
+    }
+    
     return true
   } catch (error) {
     console.error("[DB] updateDealer error:", error)
@@ -1052,6 +1102,16 @@ export async function updateDealer(id: string, updates: Partial<Dealer>): Promis
 export async function deleteDealer(id: string): Promise<boolean> {
   try {
     await sql`DELETE FROM dealers WHERE id = ${id}`
+    
+    // Sync to Firebase automatically
+    try {
+      const { deleteDealerFirebaseSync } = await import("./firebase-actions")
+      await deleteDealerFirebaseSync(id)
+    } catch (fbError) {
+      console.warn("[DB] Firebase sync warning for deleteDealer:", fbError)
+      // Don't fail the operation if Firebase sync fails
+    }
+    
     return true
   } catch (error) {
     console.error("[DB] deleteDealer error:", error)
@@ -1086,7 +1146,18 @@ export async function createMerk(nama: string, isDefault = false): Promise<{ id:
       RETURNING id, nama
     `
     if (result.length > 0) {
-      return { id: result[0].id as number, nama: result[0].nama as string }
+      const merkData = { id: result[0].id as number, nama: result[0].nama as string }
+      
+      // Sync to Firebase automatically
+      try {
+        const { createMerkFirebaseSync } = await import("./firebase-actions")
+        await createMerkFirebaseSync(merkData.nama, isDefault)
+      } catch (fbError) {
+        console.warn("[DB] Firebase sync warning for merk:", fbError)
+        // Don't fail the operation if Firebase sync fails
+      }
+      
+      return merkData
     }
     return null
   } catch (error) {

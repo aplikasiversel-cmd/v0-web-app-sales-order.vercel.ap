@@ -583,16 +583,17 @@ export async function deleteMerk(id: string) {
 
 export async function getDealers() {
   try {
-    console.log("[v0] getDealers - fetching from Firebase collection:", COLLECTIONS.DEALERS)
     // Get dealers from database
     const dbDealers = await firestoreREST.getCollection(COLLECTIONS.DEALERS)
-    console.log("[v0] getDealers - dealers from DB:", dbDealers?.length || 0, dbDealers?.map((d: any) => ({ id: d.id, name: d.namaDealer, merk: d.merk })))
+    console.log("[v0] getDealers - dbDealers from firestoreREST:", dbDealers)
     
     if (dbDealers && Array.isArray(dbDealers)) {
+      console.log("[v0] getDealers - returning", dbDealers.length, "dealers from database")
       // Return all dealers from database (including those without merk field set - they will be fixed by ensureDealerMerkField)
       return dbDealers.length > 0 ? dbDealers : generateDealersFromConstant()
     }
     
+    console.log("[v0] getDealers - falling back to constant")
     return generateDealersFromConstant()
   } catch (error) {
     console.error("[v0] Error getting dealers from database:", error)
@@ -614,7 +615,6 @@ function generateDealersFromConstant() {
       })
     })
   })
-  console.log("[v0] generateDealersFromConstant - generated dealers from constant:", dealers.length)
   return dealers
 }
 
@@ -734,14 +734,14 @@ const INIT_COOLDOWN = 300000 // 5 minutes
 export async function ensureDealerMerkField() {
   try {
     const dealers = await getDealers()
-    console.log("[v0] ensureDealerMerkField - Processing dealers:", dealers.map(d => ({ name: d.namaDealer, merk: d.merk })))
+    console.log("[v0] ensureDealerMerkField - dealers received:", dealers)
     if (!Array.isArray(dealers) || dealers.length === 0) {
-      console.log("[v0] No dealers found or not an array")
+      console.log("[v0] ensureDealerMerkField - no dealers")
       return
     }
 
     for (const dealer of dealers) {
-      console.log(`[v0] Processing dealer: ${dealer.namaDealer}, current merk: "${dealer.merk}"`)
+      console.log(`[v0] ensureDealerMerkField - checking ${dealer.namaDealer}, merk: "${dealer.merk}"`)
       // If dealer is missing merk field, try to infer it from dealer name
       if (!dealer.merk || dealer.merk === "") {
         let inferredMerk = ""
@@ -760,13 +760,9 @@ export async function ensureDealerMerkField() {
 
         // Update dealer with inferred merk if we're not using the constant
         if (inferredMerk && dealer.id && !dealer.id.includes("dealer-")) {
+          console.log(`[v0] ensureDealerMerkField - updating ${dealer.namaDealer} with merk: ${inferredMerk}`)
           await updateDealer(dealer.id, { merk: inferredMerk })
-          console.log(`[v0] Updated dealer ${dealer.namaDealer} with merk: ${inferredMerk}`)
-        } else if (inferredMerk) {
-          console.log(`[v0] Dealer ${dealer.namaDealer} is from constant, skipping update`)
         }
-      } else {
-        console.log(`[v0] Dealer ${dealer.namaDealer} already has merk: ${dealer.merk}`)
       }
     }
   } catch (error) {
@@ -858,4 +854,99 @@ export async function initializeDefaultData() {
   })()
 
   return initializationPromise
+}
+
+// ==================== DATABASE SYNC FUNCTIONS ====================
+// These functions are called from db-actions.ts to keep Firebase in sync with the database
+
+export async function createDealerFirebaseSync(dealerData: any) {
+  try {
+    const id = dealerData.id || `dealer-${Date.now()}`
+    await firestoreREST.setDocument(COLLECTIONS.DEALERS, id, {
+      id,
+      kodeDealer: dealerData.kodeDealer,
+      merk: dealerData.merk,
+      namaDealer: dealerData.namaDealer,
+      alamat: dealerData.alamat || null,
+      noTelp: dealerData.noTelp || null,
+      isActive: dealerData.isActive !== false,
+      createdAt: new Date().toISOString(),
+    })
+    return true
+  } catch (error) {
+    console.warn("[Firebase] Error syncing dealer creation:", error)
+    return false
+  }
+}
+
+export async function updateDealerFirebaseSync(id: string, updates: any) {
+  try {
+    const dealer = await firestoreREST.getDocument(COLLECTIONS.DEALERS, id)
+    if (!dealer) return false
+    
+    await firestoreREST.updateDocument(COLLECTIONS.DEALERS, id, updates)
+    return true
+  } catch (error) {
+    console.warn("[Firebase] Error syncing dealer update:", error)
+    return false
+  }
+}
+
+export async function deleteDealerFirebaseSync(id: string) {
+  try {
+    await firestoreREST.deleteDocument(COLLECTIONS.DEALERS, id)
+    return true
+  } catch (error) {
+    console.warn("[Firebase] Error syncing dealer deletion:", error)
+    return false
+  }
+}
+
+export async function createMerkFirebaseSync(nama: string, isDefault = false) {
+  try {
+    const id = `merk-${nama.toLowerCase()}`
+    await firestoreREST.setDocument(COLLECTIONS.MERKS, id, {
+      id,
+      nama: nama.toUpperCase(),
+      isDefault,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    })
+    return true
+  } catch (error) {
+    console.warn("[Firebase] Error syncing merk creation:", error)
+    return false
+  }
+}
+
+// Cleanup function to remove unused dealers from Firebase
+export async function cleanupDeletedDealersFromFirebase() {
+  try {
+    const deletedDealerCodes = [
+      "00R539", // PT AVANTE EKSA MOBILINDO - BANJARMASIN (Chery)
+      "00H040", // PT MITRA PROFITAMAS MOTOR (Hino)
+      "00L919", // PT ASIA MOBIL INTERNATIONAL (Hyundai)
+      "00G483", // ASTRA ISUZU-A YANI BANJARMASIN (Isuzu)
+      "00S353", // PT PRIMA HARAPAN MOTOR (Mazda)
+      "00G455", // PT WAHANA DELTA PRIMA BNJRMSIN (Nissan)
+      "00M294", // PT ARISTA JAYA LESTARI-BNJRMSI (Wuling)
+    ]
+
+    const dealers = await firestoreREST.getCollection(COLLECTIONS.DEALERS)
+    let deletedCount = 0
+
+    for (const dealer of dealers) {
+      if (deletedDealerCodes.includes(dealer.kodeDealer)) {
+        await firestoreREST.deleteDocument(COLLECTIONS.DEALERS, dealer.id)
+        deletedCount++
+        console.log(`[v0] Deleted dealer from Firebase: ${dealer.namaDealer}`)
+      }
+    }
+
+    console.log(`[v0] Firebase dealer cleanup complete. Deleted ${deletedCount} dealers.`)
+    return true
+  } catch (error) {
+    console.warn("[Firebase] Error during dealer cleanup:", error)
+    return false
+  }
 }
