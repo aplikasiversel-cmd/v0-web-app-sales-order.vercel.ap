@@ -56,6 +56,12 @@ export default function SimulasiPage() {
   }, [dbMerks])
 
   const availableDealers = useMemo(() => {
+    // If a program is selected, show only dealers assigned to that program
+    if (selectedProgram && selectedProgram.dealers && selectedProgram.dealers.length > 0) {
+      return selectedProgram.dealers
+    }
+
+    // Otherwise show dealers for the selected merk
     if (!formData.merk) return []
     const dealersFromDefault = DEALER_BY_MERK[formData.merk as keyof typeof DEALER_BY_MERK] || []
     const dealersFromDb = dbDealers.filter((d) => d.merk === formData.merk).map((d) => d.nama_dealer)
@@ -67,23 +73,21 @@ export default function SimulasiPage() {
         ...(dealersFromDb.length === 0 && !(dealersFromDefault.length > 0) ? dbDealers.map((d) => d.nama_dealer) : []),
       ]),
     ]
-  }, [formData.merk, dbDealers])
+  }, [formData.merk, dbDealers, selectedProgram])
 
   const filteredPrograms = useMemo(() => {
     if (!formData.merk || !formData.jenisPembiayaan || !Array.isArray(programs)) return []
     const merkLower = formData.merk.trim().toLowerCase()
     const jenisLower = formData.jenisPembiayaan.trim().toLowerCase()
 
-    // Filter programs: match merk, jenis, and dealer (if dealer is selected)
+    // Filter programs: match merk and jenis only (dealer is auto-selected from program)
     return programs.filter(
       (p) =>
         p.merk?.trim().toLowerCase() === merkLower &&
         p.jenisPembiayaan?.trim().toLowerCase() === jenisLower &&
-        p.isActive &&
-        // Strict dealer matching: only show programs where selected dealer is in the dealers list
-        (formData.dealer && p.dealers && p.dealers.length > 0 && p.dealers.includes(formData.dealer)),
+        p.isActive,
     )
-  }, [formData.merk, formData.jenisPembiayaan, formData.dealer, programs])
+  }, [formData.merk, formData.jenisPembiayaan, programs])
 
   const uniqueCmoList = useMemo(() => {
     const seen = new Set<string>()
@@ -137,16 +141,48 @@ export default function SimulasiPage() {
     loadMerksAndDealers()
   }, [])
 
+  // Auto-populate program and sync with dealers when merk/jenisPembiayaan change
   useEffect(() => {
     setFormData((prev) => ({ ...prev, namaProgram: "" }))
     setSelectedProgram(null)
     setHasilSimulasi([])
-  }, [formData.merk, formData.jenisPembiayaan])
+
+    // If we have filtered programs matching the current merk and jenisPembiayaan
+    if (formData.merk && formData.jenisPembiayaan && !Array.isArray(programs)) return
+
+    const merkLower = formData.merk?.trim().toLowerCase()
+    const jenisLower = formData.jenisPembiayaan?.trim().toLowerCase()
+
+    // Find programs that match merk and jenisPembiayaan (regardless of dealer)
+    const matchingPrograms = programs.filter(
+      (p) =>
+        p.merk?.trim().toLowerCase() === merkLower &&
+        p.jenisPembiayaan?.trim().toLowerCase() === jenisLower &&
+        p.isActive,
+    )
+
+    // If exactly one program matches, auto-select it
+    if (matchingPrograms.length === 1) {
+      const program = matchingPrograms[0]
+      setFormData((prev) => ({ ...prev, namaProgram: program.namaProgram }))
+      setSelectedProgram(program)
+
+      // Auto-sync dealer if program has assigned dealers and user doesn't have one
+      if (program.dealers && program.dealers.length > 0 && !formData.dealer) {
+        setFormData((prev) => ({ ...prev, dealer: program.dealers![0] }))
+      }
+    }
+  }, [formData.merk, formData.jenisPembiayaan, programs])
 
   useEffect(() => {
     if (formData.namaProgram) {
       const program = programs.find((p) => p.namaProgram === formData.namaProgram)
       setSelectedProgram(program || null)
+
+      // Auto-sync dealer if program has assigned dealers
+      if (program && program.dealers && program.dealers.length > 0 && !formData.dealer) {
+        setFormData((prev) => ({ ...prev, dealer: program.dealers![0] }))
+      }
     }
   }, [formData.namaProgram, programs])
 
