@@ -92,10 +92,12 @@ function AdminSpvContent() {
 
   const filteredDealers = (merk: string) => {
     if (!merk) return []
-    const dealersFromDb = dbDealers.filter((d) => d.merk === merk && d.isActive).map((d) => d.namaDealer)
-    const defaultDealers = DEALER_BY_MERK[merk] || []
-    const combined = [...new Set([...dealersFromDb, ...defaultDealers])]
-    return combined.sort()
+    // Only show dealers from the database that are active for the selected merk
+    const dealersFromDb = dbDealers
+      .filter((d) => d.merk === merk && d.isActive)
+      .map((d) => d.namaDealer)
+      .sort()
+    return dealersFromDb
   }
 
   useEffect(() => {
