@@ -143,17 +143,17 @@ export default function SimulasiPage() {
 
   // Auto-populate program and sync with dealers when merk/jenisPembiayaan change
   useEffect(() => {
-    setFormData((prev) => ({ ...prev, namaProgram: "" }))
-    setSelectedProgram(null)
-    setHasilSimulasi([])
+    if (!formData.merk || !formData.jenisPembiayaan || !Array.isArray(programs) || programs.length === 0) {
+      setFormData((prev) => ({ ...prev, namaProgram: "" }))
+      setSelectedProgram(null)
+      setHasilSimulasi([])
+      return
+    }
 
-    // If we have filtered programs matching the current merk and jenisPembiayaan
-    if (formData.merk && formData.jenisPembiayaan && !Array.isArray(programs)) return
+    const merkLower = formData.merk.trim().toLowerCase()
+    const jenisLower = formData.jenisPembiayaan.trim().toLowerCase()
 
-    const merkLower = formData.merk?.trim().toLowerCase()
-    const jenisLower = formData.jenisPembiayaan?.trim().toLowerCase()
-
-    // Find programs that match merk and jenisPembiayaan (regardless of dealer)
+    // Find programs that match merk and jenisPembiayaan
     const matchingPrograms = programs.filter(
       (p) =>
         p.merk?.trim().toLowerCase() === merkLower &&
@@ -161,28 +161,75 @@ export default function SimulasiPage() {
         p.isActive,
     )
 
-    // If exactly one program matches, auto-select it
+    // Clear form data first
+    setHasilSimulasi([])
+
+    // If no programs match, clear namaProgram
+    if (matchingPrograms.length === 0) {
+      setFormData((prev) => ({ ...prev, namaProgram: "" }))
+      setSelectedProgram(null)
+      return
+    }
+
+    // If we have a dealer selected, find the program for that specific dealer
+    if (formData.dealer) {
+      const programForDealer = matchingPrograms.find(
+        (p) => p.dealers && p.dealers.includes(formData.dealer),
+      )
+      if (programForDealer) {
+        setFormData((prev) => ({ ...prev, namaProgram: programForDealer.namaProgram }))
+        setSelectedProgram(programForDealer)
+        return
+      }
+    }
+
+    // If exactly one program matches (regardless of dealer), auto-select it
     if (matchingPrograms.length === 1) {
       const program = matchingPrograms[0]
       setFormData((prev) => ({ ...prev, namaProgram: program.namaProgram }))
       setSelectedProgram(program)
 
-      // Auto-sync dealer if program has assigned dealers and user doesn't have one
-      if (program.dealers && program.dealers.length > 0 && !formData.dealer) {
+      // Auto-sync dealer if program has assigned dealers
+      if (program.dealers && program.dealers.length > 0) {
         setFormData((prev) => ({ ...prev, dealer: program.dealers![0] }))
       }
+    } else {
+      // Multiple programs exist, clear selection and let user choose
+      setFormData((prev) => ({ ...prev, namaProgram: "" }))
+      setSelectedProgram(null)
     }
   }, [formData.merk, formData.jenisPembiayaan, programs])
+
+  // When dealer changes, update program if needed
+  useEffect(() => {
+    if (formData.dealer && formData.merk && formData.jenisPembiayaan && Array.isArray(programs)) {
+      const merkLower = formData.merk.trim().toLowerCase()
+      const jenisLower = formData.jenisPembiayaan.trim().toLowerCase()
+
+      // Find programs matching merk and jenisPembiayaan
+      const matchingPrograms = programs.filter(
+        (p) =>
+          p.merk?.trim().toLowerCase() === merkLower &&
+          p.jenisPembiayaan?.trim().toLowerCase() === jenisLower &&
+          p.isActive,
+      )
+
+      // Find the program that contains this dealer
+      const programForDealer = matchingPrograms.find(
+        (p) => p.dealers && p.dealers.includes(formData.dealer),
+      )
+
+      if (programForDealer && programForDealer.namaProgram !== formData.namaProgram) {
+        setFormData((prev) => ({ ...prev, namaProgram: programForDealer.namaProgram }))
+        setSelectedProgram(programForDealer)
+      }
+    }
+  }, [formData.dealer, formData.merk, formData.jenisPembiayaan, programs])
 
   useEffect(() => {
     if (formData.namaProgram) {
       const program = programs.find((p) => p.namaProgram === formData.namaProgram)
       setSelectedProgram(program || null)
-
-      // Auto-sync dealer if program has assigned dealers
-      if (program && program.dealers && program.dealers.length > 0 && !formData.dealer) {
-        setFormData((prev) => ({ ...prev, dealer: program.dealers![0] }))
-      }
     }
   }, [formData.namaProgram, programs])
 
