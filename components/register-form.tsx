@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { InputPhone } from "@/components/ui/input-phone"
 import { useAuth } from "@/lib/auth-context"
-import { DEALER_BY_MERK } from "@/lib/types"
+
 import { validatePassword, validateNoHp } from "@/lib/utils/format"
 import { getDealers, getMerks } from "@/app/actions/db-actions"
 import { userStore, merkStore } from "@/lib/data-store"
@@ -76,17 +76,6 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
 
   useEffect(() => {
     const loadData = async () => {
-      const defaultDealers: DealerItem[] = []
-      Object.entries(DEALER_BY_MERK).forEach(([merk, dealers]) => {
-        dealers.forEach((dealerName, index) => {
-          defaultDealers.push({
-            id: `default-${merk}-${index}`,
-            namaDealer: dealerName,
-            merk: merk,
-          })
-        })
-      })
-
       // Load merks from Firebase dan buat map ID -> Nama
       let dbMerks: string[] = []
       let merkIdMap: MerkIdToName = {}
@@ -102,6 +91,7 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
         console.error("Error loading merks from database:", error)
       }
 
+      // Load only database dealers (no hardcoded defaults)
       let dbDealers: DealerItem[] = []
       try {
         const dealersFromDb = await getDealers()
@@ -139,27 +129,14 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
           })
           .filter((spv) => spv.merk && spv.dealer) // Hanya include SPV yang memiliki merk dan dealer
         setSpvList(spvUsers)
-        console.log("[v0] RegisterForm - SPV list loaded:", spvUsers.length, "SPVs", "Map:", merkIdMap)
       } catch (error) {
         console.error("Error loading SPV list:", error)
       }
 
-      const allDealersMap = new Map<string, DealerItem>()
+      // Use only database dealers, no hardcoded defaults
+      setAvailableDealers(dbDealers)
 
-      defaultDealers.forEach((d) => {
-        const key = `${d.merk}-${d.namaDealer}`
-        allDealersMap.set(key, d)
-      })
-
-      dbDealers.forEach((d) => {
-        const key = `${d.merk}-${d.namaDealer}`
-        allDealersMap.set(key, d)
-      })
-
-      const combinedDealers = Array.from(allDealersMap.values())
-      setAvailableDealers(combinedDealers)
-
-      const dealerMerks = [...new Set(combinedDealers.map((d) => d.merk))]
+      const dealerMerks = [...new Set(dbDealers.map((d) => d.merk))]
       const combinedMerks = [...new Set([...dbMerks, ...dealerMerks])].sort()
       setAllMerks(combinedMerks)
     }
