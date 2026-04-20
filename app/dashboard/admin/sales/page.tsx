@@ -92,18 +92,22 @@ export default function AdminSalesPage() {
 
   const addAvailableDealers = useMemo(() => {
     if (!addFormData.merk) return []
-    const dealersFromDb = dbDealers.filter((d) => d.merk === addFormData.merk && d.isActive).map((d) => d.namaDealer)
-    const defaultDealers = DEALER_BY_MERK[addFormData.merk] || []
-    const combined = [...new Set([...dealersFromDb, ...defaultDealers])]
-    return combined.sort()
+    // Only show dealers from the database that are active for the selected merk
+    const dealersFromDb = dbDealers
+      .filter((d) => d.merk === addFormData.merk && d.isActive)
+      .map((d) => d.namaDealer)
+      .sort()
+    return dealersFromDb
   }, [addFormData.merk, dbDealers])
 
   const editAvailableDealers = useMemo(() => {
     if (!editFormData.merk) return []
-    const dealersFromDb = dbDealers.filter((d) => d.merk === editFormData.merk && d.isActive).map((d) => d.namaDealer)
-    const defaultDealers = DEALER_BY_MERK[editFormData.merk] || []
-    const combined = [...new Set([...dealersFromDb, ...defaultDealers])]
-    return combined.sort()
+    // Only show dealers from the database that are active for the selected merk
+    const dealersFromDb = dbDealers
+      .filter((d) => d.merk === editFormData.merk && d.isActive)
+      .map((d) => d.namaDealer)
+      .sort()
+    return dealersFromDb
   }, [editFormData.merk, dbDealers])
 
   const addFilteredSpvList = useMemo(() => {
