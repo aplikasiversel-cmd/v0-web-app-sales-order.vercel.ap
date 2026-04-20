@@ -918,3 +918,35 @@ export async function createMerkFirebaseSync(nama: string, isDefault = false) {
     return false
   }
 }
+
+// Cleanup function to remove unused dealers from Firebase
+export async function cleanupDeletedDealersFromFirebase() {
+  try {
+    const deletedDealerCodes = [
+      "00R539", // PT AVANTE EKSA MOBILINDO - BANJARMASIN (Chery)
+      "00H040", // PT MITRA PROFITAMAS MOTOR (Hino)
+      "00L919", // PT ASIA MOBIL INTERNATIONAL (Hyundai)
+      "00G483", // ASTRA ISUZU-A YANI BANJARMASIN (Isuzu)
+      "00S353", // PT PRIMA HARAPAN MOTOR (Mazda)
+      "00G455", // PT WAHANA DELTA PRIMA BNJRMSIN (Nissan)
+      "00M294", // PT ARISTA JAYA LESTARI-BNJRMSI (Wuling)
+    ]
+
+    const dealers = await firestoreREST.getCollection(COLLECTIONS.DEALERS)
+    let deletedCount = 0
+
+    for (const dealer of dealers) {
+      if (deletedDealerCodes.includes(dealer.kodeDealer)) {
+        await firestoreREST.deleteDocument(COLLECTIONS.DEALERS, dealer.id)
+        deletedCount++
+        console.log(`[v0] Deleted dealer from Firebase: ${dealer.namaDealer}`)
+      }
+    }
+
+    console.log(`[v0] Firebase dealer cleanup complete. Deleted ${deletedCount} dealers.`)
+    return true
+  } catch (error) {
+    console.warn("[Firebase] Error during dealer cleanup:", error)
+    return false
+  }
+}
