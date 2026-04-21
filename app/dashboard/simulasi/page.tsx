@@ -72,14 +72,23 @@ export default function SimulasiPage() {
     const merkLower = formData.merk.trim().toLowerCase()
     const jenisLower = formData.jenisPembiayaan.trim().toLowerCase()
 
-    // Filter programs: match merk, jenis, and dealer (if dealer is selected)
-    return programs.filter(
+    // Filter programs: match merk and jenis
+    // If dealer is selected, prefer programs that include that dealer
+    const allMatching = programs.filter(
       (p) =>
         p.merk?.trim().toLowerCase() === merkLower &&
         p.jenisPembiayaan?.trim().toLowerCase() === jenisLower &&
-        p.isActive &&
-        (!formData.dealer || (p.dealers && p.dealers.includes(formData.dealer))),
+        p.isActive,
     )
+
+    // If dealer is selected, prioritize programs with that dealer assigned
+    if (formData.dealer && allMatching.length > 0) {
+      const withDealer = allMatching.filter((p) => p.dealers && p.dealers.includes(formData.dealer))
+      // Return programs with dealer first, then all others
+      return withDealer.length > 0 ? withDealer : allMatching
+    }
+
+    return allMatching
   }, [formData.merk, formData.jenisPembiayaan, formData.dealer, programs])
 
   const uniqueCmoList = useMemo(() => {
