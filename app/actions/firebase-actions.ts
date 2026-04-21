@@ -775,6 +775,10 @@ export async function migrateExistingProgramsToDealers() {
     const programs = await getPrograms()
     if (!Array.isArray(programs) || programs.length === 0) return
 
+    // Get all actual dealers from database
+    const dealers = await getDealers()
+    if (!Array.isArray(dealers)) return
+
     for (const program of programs) {
       // Skip if already has dealers assigned
       if (program.dealers && program.dealers.length > 0) continue
@@ -782,14 +786,19 @@ export async function migrateExistingProgramsToDealers() {
       const programNameUpper = (program.namaProgram || "").toUpperCase()
       let assignedDealers: string[] = []
 
+      // Get dealers for this program's merk from database
+      const merkDealers = dealers.filter((d: any) => d.merk === program.merk)
+
       // Auto-assign dealers based on program name pattern
       if (programNameUpper.includes("ASTRA")) {
-        assignedDealers = DEALER_BY_MERK["Daihatsu"]?.filter((d: string) => d.includes("ASTRA")) || []
+        assignedDealers = merkDealers.filter((d: any) => d.namaDealer.includes("ASTRA")).map((d: any) => d.namaDealer)
       } else if (programNameUpper.includes("TMS") || programNameUpper.includes("TRI MANDIRI")) {
-        assignedDealers = DEALER_BY_MERK["Daihatsu"]?.filter((d: string) => d.includes("TRI MANDIRI")) || []
+        assignedDealers = merkDealers.filter((d: any) => d.namaDealer.includes("TRI MANDIRI")).map((d: any) => d.namaDealer)
+      } else if (programNameUpper.includes("ISTANA")) {
+        assignedDealers = merkDealers.filter((d: any) => d.namaDealer.includes("ISTANA")).map((d: any) => d.namaDealer)
       } else if (program.merk) {
         // If no pattern match, assign all dealers for the merk
-        assignedDealers = DEALER_BY_MERK[program.merk] || []
+        assignedDealers = merkDealers.map((d: any) => d.namaDealer)
       }
 
       // Update program with assigned dealers
