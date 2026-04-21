@@ -72,14 +72,15 @@ export default function SimulasiPage() {
     const merkLower = formData.merk.trim().toLowerCase()
     const jenisLower = formData.jenisPembiayaan.trim().toLowerCase()
 
-    // Filter programs: match merk and jenis only (dealer is auto-selected from program)
+    // Filter programs: match merk, jenis, and dealer (if dealer is selected)
     return programs.filter(
       (p) =>
         p.merk?.trim().toLowerCase() === merkLower &&
         p.jenisPembiayaan?.trim().toLowerCase() === jenisLower &&
-        p.isActive,
+        p.isActive &&
+        (!formData.dealer || (p.dealers && p.dealers.includes(formData.dealer))),
     )
-  }, [formData.merk, formData.jenisPembiayaan, programs])
+  }, [formData.merk, formData.jenisPembiayaan, formData.dealer, programs])
 
   const uniqueCmoList = useMemo(() => {
     const seen = new Set<string>()
