@@ -120,26 +120,22 @@ export default function AdminProgramPage() {
     }
   }, [showAddDialog, showEditDialog])
 
-  // Filter dealers when merk changes
+  // Filter dealers when merk changes (only during add, not during edit)
   useEffect(() => {
     if (formData.merk && allDealers.length > 0) {
       // Case-insensitive merk comparison
       const merkLower = formData.merk.toLowerCase().trim()
-      console.log("[v0] Filtering for merk:", formData.merk, "merkLower:", merkLower)
-      console.log("[v0] All dealers:", allDealers)
       
       const filtered = allDealers.filter((d) => {
         const dealerMerk = (d.merk || "").toLowerCase().trim()
-        const matches = dealerMerk === merkLower && d.isActive !== false
-        if (formData.merk === "JAECOO") {
-          console.log(`[v0] Checking ${d.namaDealer}: dealerMerk="${dealerMerk}", matches=${matches}`)
-        }
-        return matches
+        return dealerMerk === merkLower && d.isActive !== false
       })
-      console.log("[v0] Filtered dealers:", filtered)
+      
       setFilteredDealers(filtered)
-      // Reset dealers array if any selected dealer doesn't match new merk
-      if (formData.dealers && formData.dealers.length > 0) {
+      
+      // Only validate dealers during ADD mode (not during EDIT)
+      // During EDIT, preserve the existing dealer selections
+      if (!showEditDialog && formData.dealers && formData.dealers.length > 0) {
         const validDealers = formData.dealers.filter(selectedDealer => 
           filtered.some(d => d.namaDealer === selectedDealer)
         )
@@ -150,7 +146,7 @@ export default function AdminProgramPage() {
     } else {
       setFilteredDealers([])
     }
-  }, [formData.merk, allDealers])
+  }, [formData.merk, allDealers, showEditDialog])
 
   const loadPrograms = async () => {
     try {
