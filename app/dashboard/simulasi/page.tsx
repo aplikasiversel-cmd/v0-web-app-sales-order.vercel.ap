@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/lib/auth-context"
 import { userStore, programStore, simulasiStore } from "@/lib/data-store"
 import type { User, Program, SimulasiKredit } from "@/lib/types"
-import { MERK_LIST, DEALER_BY_MERK } from "@/lib/types"
+import { MERK_LIST } from "@/lib/types"
 import { formatRupiah, formatTanggal } from "@/lib/utils/format"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
@@ -61,18 +61,10 @@ export default function SimulasiPage() {
       return selectedProgram.dealers
     }
 
-    // Otherwise show dealers for the selected merk
+    // Otherwise show dealers for the selected merk from database only
     if (!formData.merk) return []
-    const dealersFromDefault = DEALER_BY_MERK[formData.merk as keyof typeof DEALER_BY_MERK] || []
     const dealersFromDb = dbDealers.filter((d) => d.merk === formData.merk).map((d) => d.nama_dealer)
-    // If no dealers found for this merk, show all dealers from database
-    return [
-      ...new Set([
-        ...dealersFromDefault,
-        ...dealersFromDb,
-        ...(dealersFromDb.length === 0 && !(dealersFromDefault.length > 0) ? dbDealers.map((d) => d.nama_dealer) : []),
-      ]),
-    ]
+    return dealersFromDb
   }, [formData.merk, dbDealers, selectedProgram])
 
   const filteredPrograms = useMemo(() => {
