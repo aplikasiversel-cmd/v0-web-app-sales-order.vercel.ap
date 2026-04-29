@@ -779,9 +779,14 @@ export async function migrateExistingProgramsToDealers() {
     const dealers = await getDealers()
     if (!Array.isArray(dealers)) return
 
+    console.log("[v0] migrateExistingProgramsToDealers - programs:", programs.length, "dealers:", dealers.length)
+
     for (const program of programs) {
       // Skip if already has dealers assigned
-      if (program.dealers && program.dealers.length > 0) continue
+      if (program.dealers && program.dealers.length > 0) {
+        console.log("[v0] Skipping program (already has dealers):", program.namaProgram, "dealers:", program.dealers)
+        continue
+      }
 
       const programNameUpper = (program.namaProgram || "").toUpperCase()
       let assignedDealers: string[] = []
@@ -803,7 +808,10 @@ export async function migrateExistingProgramsToDealers() {
 
       // Update program with assigned dealers
       if (assignedDealers.length > 0) {
+        console.log("[v0] Updating program:", program.namaProgram, "with dealers:", assignedDealers)
         await firestoreREST.updateDocument(COLLECTIONS.PROGRAMS, program.id, { dealers: assignedDealers })
+      } else {
+        console.log("[v0] No dealers found for program:", program.namaProgram, "merk:", program.merk, "merkDealers:", merkDealers.length)
       }
     }
   } catch (error) {
