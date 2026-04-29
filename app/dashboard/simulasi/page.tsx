@@ -72,6 +72,8 @@ export default function SimulasiPage() {
     const merkLower = formData.merk.trim().toLowerCase()
     const jenisLower = formData.jenisPembiayaan.trim().toLowerCase()
 
+    console.log("[v0] filteredPrograms - merk:", formData.merk, "jenis:", formData.jenisPembiayaan, "total programs:", programs.length)
+
     // Filter programs: match merk and jenis
     // If dealer is selected, prefer programs that include that dealer
     const allMatching = programs.filter(
@@ -81,9 +83,12 @@ export default function SimulasiPage() {
         p.isActive,
     )
 
+    console.log("[v0] allMatching count:", allMatching.length, "programs:", allMatching.map((p) => p.namaProgram))
+
     // If dealer is selected, prioritize programs with that dealer assigned
     if (formData.dealer && allMatching.length > 0) {
       const withDealer = allMatching.filter((p) => p.dealers && p.dealers.includes(formData.dealer))
+      console.log("[v0] dealer:", formData.dealer, "withDealer count:", withDealer.length)
       // Return programs with dealer first, then all others
       return withDealer.length > 0 ? withDealer : allMatching
     }
