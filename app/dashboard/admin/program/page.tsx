@@ -120,7 +120,7 @@ export default function AdminProgramPage() {
     }
   }, [showAddDialog, showEditDialog])
 
-  // Filter dealers when merk changes (only during add, not during edit)
+  // Filter dealers when merk changes - always update the dealer list based on selected merk
   useEffect(() => {
     if (formData.merk && allDealers.length > 0) {
       // Case-insensitive merk comparison
@@ -132,21 +132,24 @@ export default function AdminProgramPage() {
       })
       
       setFilteredDealers(filtered)
+      console.log("[v0] Merk changed to:", formData.merk, "Filtered dealers count:", filtered.length)
       
-      // Only validate dealers during ADD mode (not during EDIT)
-      // During EDIT, preserve the existing dealer selections
-      if (!showEditDialog && formData.dealers && formData.dealers.length > 0) {
+      // Always validate dealers against the new merk selection
+      // If dealer changes, automatically remove dealers not in the selected merk
+      if (formData.dealers && formData.dealers.length > 0) {
         const validDealers = formData.dealers.filter(selectedDealer => 
           filtered.some(d => d.namaDealer === selectedDealer)
         )
+        // Update dealers if any were filtered out
         if (validDealers.length !== formData.dealers.length) {
+          console.log("[v0] Removing invalid dealers, keeping:", validDealers)
           setFormData((prev) => ({ ...prev, dealers: validDealers }))
         }
       }
     } else {
       setFilteredDealers([])
     }
-  }, [formData.merk, allDealers, showEditDialog])
+  }, [formData.merk, allDealers])
 
   const loadPrograms = async () => {
     try {
