@@ -260,12 +260,47 @@ export default function AktivitasPage() {
   }
 
   const [activeTab, setActiveTab] = useState("Semua")
+  const [activePeriod, setActivePeriod] = useState("Semua")
+
+  const getDateRangeForPeriod = (period: string): { start: Date; end: Date } => {
+    const today = new Date()
+    const start = new Date()
+
+    switch (period) {
+      case "Mingguan": // Weekly
+        start.setDate(today.getDate() - today.getDay())
+        return { start, end: today }
+      case "Bulanan": // Monthly
+        start.setDate(1)
+        return { start, end: today }
+      case "Tahunan": // Yearly
+        start.setMonth(0)
+        start.setDate(1)
+        return { start, end: today }
+      default: // Semua (All)
+        return { start: new Date(2000, 0, 1), end: new Date(2099, 11, 31) }
+    }
+  }
 
   const filteredAktivitas = aktivitasList.filter((aktivitas) => {
-    if (activeTab === "Semua") return true
-    if (activeTab === "Kunjungan") return aktivitas.jenisAktivitas === "Kunjungan Dealer"
-    if (activeTab === "Event") return aktivitas.jenisAktivitas === "Event Dealer"
-    if (activeTab === "Pameran") return aktivitas.jenisAktivitas === "Pameran"
+    // Filter by activity type
+    if (activeTab === "Semua") {
+      // All types
+    } else if (activeTab === "Kunjungan") {
+      if (aktivitas.jenisAktivitas !== "Kunjungan Dealer") return false
+    } else if (activeTab === "Event") {
+      if (aktivitas.jenisAktivitas !== "Event Dealer") return false
+    } else if (activeTab === "Pameran") {
+      if (aktivitas.jenisAktivitas !== "Pameran") return false
+    }
+
+    // Filter by period
+    if (activePeriod !== "Semua") {
+      const { start, end } = getDateRangeForPeriod(activePeriod)
+      const aktivitasDate = new Date(aktivitas.tanggal)
+      if (aktivitasDate < start || aktivitasDate > end) return false
+    }
+
     return true
   })
 
@@ -296,6 +331,25 @@ export default function AktivitasPage() {
             <TabsTrigger value="Pameran">Pameran</TabsTrigger>
           </TabsList>
         </Tabs>
+
+        {user.role === "cmh" && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm font-semibold text-blue-900 mb-3">Filter Periode:</p>
+            <div className="flex flex-wrap gap-2">
+              {["Semua", "Mingguan", "Bulanan", "Tahunan"].map((period) => (
+                <Button
+                  key={period}
+                  variant={activePeriod === period ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setActivePeriod(period)}
+                  className="text-xs md:text-sm"
+                >
+                  {period}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
